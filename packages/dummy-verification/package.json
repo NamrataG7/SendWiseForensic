@@ -1,0 +1,22 @@
+{
+  "name": "@sendwise-forensic/dummy-verification",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Prototype-only dummy verification tokens (Aadhaar identity, e-Sign, Review Committee quorum) for SendWiseForensic. Every token carries a visible DUMMY marker.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./banners": "./src/banners.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test dist/__tests__/*.test.js",
+    "typecheck": "tsc --noEmit -p ."
+  },
+  "peerDependencies": {
+    "zod": "^3.23.8"
+  }
+}

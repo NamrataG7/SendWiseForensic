@@ -12,6 +12,7 @@
   "types": "./src/index.ts",
   "peerDependencies": {
     "zod": "^3.23.8",
-    "@sendwise-forensic/evidence-certificate": "*"
+    "@sendwise-forensic/evidence-certificate": "*",
+    "@sendwise-forensic/dummy-verification": "*"
   }
 }

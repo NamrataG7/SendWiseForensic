@@ -29,6 +29,7 @@ import {
   aggregatedRootHash,
   type CertificateInput,
 } from '@sendwise-forensic/evidence-certificate';
+import { DummyReviewCommitteeTokenSchema } from '@sendwise-forensic/dummy-verification';
 import { randomUUID } from 'node:crypto';
 
 // TODO(UIDAI-INTEGRATION) resolve the current Union/State Home Secretary set
@@ -123,6 +124,25 @@ export class IndiaLegalFramework implements LegalFrameworkAdapter {
       }
       if (!auth.reviewCommitteeApproval) {
         errors.push('reviewCommitteeApproval required for JUDICIAL_WARRANT (IT Rules 2009 R.22)');
+      } else {
+        // TODO(REVIEW-COMMITTEE-QUORUM) — for the prototype, the
+        // reviewCommitteeApproval object must additionally carry a
+        // @sendwise-forensic/dummy-verification DummyReviewCommitteeToken
+        // (visibly stamped "DUMMY QUORUM — PROTOTYPE ONLY"). Once a real
+        // quorum record is available this check is replaced with proper
+        // credential verification. See docs/PROTOTYPE_NOTICE.md item 3.
+        const dummy = DummyReviewCommitteeTokenSchema.safeParse(
+          auth.reviewCommitteeApproval,
+        );
+        if (!dummy.success) {
+          errors.push(
+            'reviewCommitteeApproval must be a DummyReviewCommitteeToken from @sendwise-forensic/dummy-verification (IT Rules 2009 R.22; TODO(REVIEW-COMMITTEE-QUORUM))',
+          );
+        } else if (!dummy.data.quorumMet) {
+          errors.push(
+            'reviewCommitteeApproval.quorumMet is false — full Cabinet Secretary + Secretary Legal + Secretary Telecom quorum required (IT Rules 2009 R.22; TODO(REVIEW-COMMITTEE-QUORUM))',
+          );
+        }
       }
       const allowlist = allCompetentAuthorityIds(this.getCompetentAuthorities());
       if (!allowlist.has(auth.issuingAuthorityId)) {
