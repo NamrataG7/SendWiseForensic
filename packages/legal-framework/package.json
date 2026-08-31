@@ -6,10 +6,16 @@
   "description": "Pluggable jurisdiction adapter for SendWiseForensic. India is the primary implementation.",
   "exports": {
     ".": "./src/index.ts",
-    "./india": "./src/india/index.ts"
+    "./india": "./src/india/index.ts",
+    "./us": "./src/us/index.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "scripts": {
+    "build:test": "tsc -p tsconfig.test.json",
+    "test": "npm run build:test && node --test dist/us/__tests__/*.test.js",
+    "typecheck": "tsc --noEmit -p ."
+  },
   "peerDependencies": {
     "zod": "^3.23.8",
     "@sendwise-forensic/evidence-certificate": "*",
