@@ -367,3 +367,406 @@ export async function appendAudit(
   if (error) return { ok: false, error: error.message };
   return { ok: true, id: Number(data) };
 }
+
+// ---------------------------------------------------------------------------
+// Evidence + Export + Filter-Team review row types and helpers.
+//
+// Metadata-only reads: we intentionally do NOT select payload_ref
+// (raw payload / cold-storage handle) from any of these helpers. RLS on
+// evidence hides raw_payload effectively already, but keeping the SELECT
+// list narrow means an accidental client-render leak is impossible.
+// ---------------------------------------------------------------------------
+
+export type EvidenceCategoryDb =
+  | 'KEYSTROKE_BATCH'
+  | 'APP_EVENT'
+  | 'COMMS_METADATA'
+  | 'RISK_DETECTION';
+
+export type PrivilegeFlagDb =
+  | 'NONE'
+  | 'LEGAL'
+  | 'MEDICAL'
+  | 'CLERGY'
+  | 'SPOUSAL'
+  | 'UNKNOWN';
+
+export type QuarantineStatusDb = 'PENDING_FILTER' | 'RELEASED' | 'SUPPRESSED';
+
+export interface EvidenceMetadataRow {
+  id: string;
+  sessionId: string;
+  category: EvidenceCategoryDb;
+  capturedAt: Date;
+  payloadHash: string;
+  prevEvidenceHash: string | null;
+  privilegeFlag: PrivilegeFlagDb;
+  quarantineStatus: QuarantineStatusDb | null;
+  createdAt: Date;
+}
+
+interface EvidenceRowRaw {
+  id: string;
+  session_id: string;
+  category: EvidenceCategoryDb;
+  captured_at: string;
+  payload_hash: string;
+  prev_evidence_hash: string | null;
+  privilege_flag: PrivilegeFlagDb;
+  quarantine_status: QuarantineStatusDb | null;
+  created_at: string;
+}
+
+function toEvidenceMetadata(r: EvidenceRowRaw): EvidenceMetadataRow {
+  return {
+    id: r.id,
+    sessionId: r.session_id,
+    category: r.category,
+    capturedAt: new Date(r.captured_at),
+    payloadHash: r.payload_hash,
+    prevEvidenceHash: r.prev_evidence_hash,
+    privilegeFlag: r.privilege_flag,
+    quarantineStatus: r.quarantine_status,
+    createdAt: new Date(r.created_at),
+  };
+}
+
+/**
+ * Investigative read: evidence metadata for a case, RLS-scoped.
+ * Per ENTITY_MODEL.md §3.4, the RLS policy already excludes
+ * PENDING_FILTER and SUPPRESSED — we mirror that filter in the SELECT
+ * for defence-in-depth against an RLS misconfiguration.
+ */
+export async function listEvidenceMetadataForCase(
+  supabase: SupabaseClient,
+  caseId: string,
+): Promise<EvidenceMetadataRow[]> {
+  const { data, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, monitoring_session:session_id!inner(authorization:authorization_id!inner(case_id))',
+    )
+    .eq('monitoring_session.authorization.case_id', caseId)
+    .or('quarantine_status.is.null,quarantine_status.eq.RELEASED')
+    .order('captured_at', { ascending: false });
+  if (error || !data) return [];
+  return (data as unknown as EvidenceRowRaw[]).map(toEvidenceMetadata);
+}
+
+/**
+ * Bulk fetch of evidence rows by id, RLS-scoped. Used by the export
+ * generate route to gather hashes for hash-chain verification and for
+ * the aggregated root hash.
+ *
+ * Returns rows in the SAME ORDER as `ids` (missing rows are omitted).
+ */
+export async function getEvidenceByIds(
+  supabase: SupabaseClient,
+  ids: string[],
+): Promise<EvidenceMetadataRow[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at',
+    )
+    .in('id', ids);
+  if (error || !data) return [];
+  const map = new Map<string, EvidenceMetadataRow>();
+  for (const r of data as unknown as EvidenceRowRaw[]) {
+    map.set(r.id, toEvidenceMetadata(r));
+  }
+  const out: EvidenceMetadataRow[] = [];
+  for (const id of ids) {
+    const row = map.get(id);
+    if (row) out.push(row);
+  }
+  return out;
+}
+
+/**
+ * Filter Team read: cross-case pending queue. RLS enforces
+ * (auth_role() = 'FILTER_TEAM' AND quarantine_status = 'PENDING_FILTER').
+ */
+export async function listFilterTeamQueue(
+  supabase: SupabaseClient,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<EvidenceMetadataRow[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const { data, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at',
+    )
+    .eq('quarantine_status', 'PENDING_FILTER')
+    .order('created_at', { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (error || !data) return [];
+  return (data as unknown as EvidenceRowRaw[]).map(toEvidenceMetadata);
+}
+
+// ---------------------------------------------------------------------------
+// Evidence export rows
+// ---------------------------------------------------------------------------
+
+export type ExportPurposeDb =
+  | 'COURT_SUBMISSION'
+  | 'INTERNAL_REVIEW'
+  | 'DEFENSE_DISCLOSURE';
+
+/**
+ * evidence_export table has no `status` column in the current schema;
+ * we derive it from approved_by cardinality + exported_at at the API
+ * layer so the UI has a status timeline without a schema migration.
+ */
+export type ExportDerivedStatus =
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'GENERATED';
+
+export interface EvidenceExportRecord {
+  id: string;
+  caseId: string;
+  evidenceIds: string[];
+  requestedBy: string;
+  approvedBy: string[];
+  purpose: ExportPurposeDb;
+  bsaSection63CertificateRef: string | null;
+  exportedAt: Date | null;
+  recipientNotice: string;
+  createdAt: Date;
+  updatedAt: Date;
+  derivedStatus: ExportDerivedStatus;
+}
+
+interface EvidenceExportRowRaw {
+  id: string;
+  case_id: string;
+  evidence_ids: string[];
+  requested_by: string;
+  approved_by: string[];
+  purpose: ExportPurposeDb;
+  bsa_section_63_certificate_ref: string | null;
+  exported_at: string | null;
+  recipient_notice: string;
+  created_at: string;
+  updated_at: string;
+}
+
+function deriveExportStatus(r: EvidenceExportRowRaw): ExportDerivedStatus {
+  if (r.exported_at && r.bsa_section_63_certificate_ref) return 'GENERATED';
+  if ((r.approved_by ?? []).length >= 2) return 'APPROVED';
+  return 'PENDING_APPROVAL';
+}
+
+function toEvidenceExport(r: EvidenceExportRowRaw): EvidenceExportRecord {
+  return {
+    id: r.id,
+    caseId: r.case_id,
+    evidenceIds: r.evidence_ids ?? [],
+    requestedBy: r.requested_by,
+    approvedBy: r.approved_by ?? [],
+    purpose: r.purpose,
+    bsaSection63CertificateRef: r.bsa_section_63_certificate_ref,
+    exportedAt: r.exported_at ? new Date(r.exported_at) : null,
+    recipientNotice: r.recipient_notice,
+    createdAt: new Date(r.created_at),
+    updatedAt: new Date(r.updated_at),
+    derivedStatus: deriveExportStatus(r),
+  };
+}
+
+export async function getEvidenceExportById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<EvidenceExportRecord | null> {
+  const { data, error } = await supabase
+    .from('evidence_export')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return null;
+  return toEvidenceExport(data as EvidenceExportRowRaw);
+}
+
+// ---------------------------------------------------------------------------
+// Filter Team review row (post-decision insertion; RLS restricts writes).
+// ---------------------------------------------------------------------------
+
+export type FilterTeamDecision =
+  | 'RELEASE'
+  | 'SUPPRESS'
+  | 'REDACT_AND_RELEASE';
+
+export async function insertFilterTeamReview(
+  supabase: SupabaseClient,
+  args: {
+    evidenceId: string;
+    reviewerId: string;
+    decision: FilterTeamDecision;
+    reason: string;
+  },
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from('filter_team_review')
+    .insert({
+      evidence_id: args.evidenceId,
+      reviewer_id: args.reviewerId,
+      decision: args.decision,
+      reason: args.reason,
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? 'insert failed' };
+  }
+  return { ok: true, id: (data as { id: string }).id };
+}
+
+/**
+ * Update evidence.quarantine_status based on the filter-team decision.
+ *   RELEASE            -> RELEASED
+ *   SUPPRESS           -> SUPPRESSED
+ *   REDACT_AND_RELEASE -> RELEASED (with redactions_applied appended;
+ *                        the redaction pipeline lives outside prototype)
+ */
+export async function applyFilterTeamDecisionToEvidence(
+  supabase: SupabaseClient,
+  args: { evidenceId: string; decision: FilterTeamDecision; reason: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const next: QuarantineStatusDb =
+    args.decision === 'SUPPRESS' ? 'SUPPRESSED' : 'RELEASED';
+
+  // For REDACT_AND_RELEASE we append a redaction marker; the actual
+  // redaction pipeline is out of scope for the prototype console.
+  // TODO(FILTER-TEAM-INDEPENDENCE) run the real redaction pipeline before
+  // flipping to RELEASED.
+  const update: Record<string, unknown> = { quarantine_status: next };
+  if (args.decision === 'REDACT_AND_RELEASE') {
+    update.redactions_applied = [
+      { by: 'FILTER_TEAM', reason: args.reason, at: new Date().toISOString() },
+    ];
+  }
+
+  const { error } = await supabase
+    .from('evidence')
+    .update(update)
+    .eq('id', args.evidenceId);
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Session + Device + Officer lookups used by the export/generate route to
+// assemble the BSA §63 certificate input.
+// ---------------------------------------------------------------------------
+
+export interface MonitoringSessionRecord {
+  id: string;
+  authorizationId: string;
+  deviceId: string;
+  startedAt: Date;
+  endsAt: Date;
+  collectedCategories: string[];
+}
+
+interface MonitoringSessionRowRaw {
+  id: string;
+  authorization_id: string;
+  device_id: string;
+  started_at: string;
+  ends_at: string;
+  collected_categories: string[];
+}
+
+export async function getMonitoringSessionById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<MonitoringSessionRecord | null> {
+  const { data, error } = await supabase
+    .from('monitoring_session')
+    .select('id, authorization_id, device_id, started_at, ends_at, collected_categories')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as MonitoringSessionRowRaw;
+  return {
+    id: r.id,
+    authorizationId: r.authorization_id,
+    deviceId: r.device_id,
+    startedAt: new Date(r.started_at),
+    endsAt: new Date(r.ends_at),
+    collectedCategories: r.collected_categories ?? [],
+  };
+}
+
+export interface DeviceRecord {
+  id: string;
+  subjectId: string;
+  platform: 'ANDROID';
+  deviceFingerprint: string;
+  hardwareBackedPubKey: string | null;
+}
+
+interface DeviceRowRaw {
+  id: string;
+  subject_id: string;
+  platform: string;
+  device_fingerprint: string;
+  hardware_backed_pub_key: string | null;
+}
+
+export async function getDeviceById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<DeviceRecord | null> {
+  const { data, error } = await supabase
+    .from('device')
+    .select('id, subject_id, platform, device_fingerprint, hardware_backed_pub_key')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as DeviceRowRaw;
+  return {
+    id: r.id,
+    subjectId: r.subject_id,
+    platform: 'ANDROID',
+    deviceFingerprint: r.device_fingerprint,
+    hardwareBackedPubKey: r.hardware_backed_pub_key,
+  };
+}
+
+export interface OfficerFull {
+  id: string;
+  fullName: string;
+  serviceId: string | null;
+  email: string | null;
+  organization: string | null;
+}
+
+export async function getOfficerById(
+  supabase: SupabaseClient,
+  id: string,
+): Promise<OfficerFull | null> {
+  const { data, error } = await supabase
+    .from('officer')
+    .select('id, full_name, service_id, email, organization')
+    .eq('id', id)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as {
+    id: string;
+    full_name: string;
+    service_id: string | null;
+    email: string | null;
+    organization: string | null;
+  };
+  return {
+    id: r.id,
+    fullName: r.full_name,
+    serviceId: r.service_id,
+    email: r.email,
+    organization: r.organization,
+  };
+}
