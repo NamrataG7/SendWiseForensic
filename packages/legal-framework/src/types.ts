@@ -42,6 +42,14 @@ export enum PrivilegeCategory {
   MEDICAL = 'MEDICAL',
   CLERGY = 'CLERGY',
   SPOUSAL = 'SPOUSAL',
+  // US-namespaced variants. Distinct enum values from the India-side
+  // labels so the Filter Team console shows unambiguous per-jurisdiction
+  // categories. A sibling worker is renaming the four unprefixed values
+  // above to IN_-prefixed forms; do NOT touch those in this PR.
+  US_ATTORNEY_CLIENT = 'US_ATTORNEY_CLIENT',
+  US_MEDICAL_HIPAA = 'US_MEDICAL_HIPAA',
+  US_CLERGY = 'US_CLERGY',
+  US_SPOUSAL_TRAMMEL = 'US_SPOUSAL_TRAMMEL',
 }
 
 /**
@@ -60,7 +68,21 @@ export enum LegitimateAimIN {
   // TODO(UK-ADAPTER) add UK grounds.
 }
 
-export type LegitimateAim = LegitimateAimIN;
+export type LegitimateAim = LegitimateAimIN | LegitimateAimUS;
+
+/**
+ * US-specific grounds under Title III / ECPA. Every value is US_-prefixed
+ * so cross-jurisdiction confusion is structurally impossible.
+ */
+export enum LegitimateAimUS {
+  US_PARTICULAR_OFFENSE_S2516 = 'US_PARTICULAR_OFFENSE_S2516',
+  US_INVESTIGATION_OF_ORGANIZED_CRIME = 'US_INVESTIGATION_OF_ORGANIZED_CRIME',
+  US_NATIONAL_SECURITY_NON_FISA = 'US_NATIONAL_SECURITY_NON_FISA',
+  US_PRETRIAL_SUPERVISION_S3142 = 'US_PRETRIAL_SUPERVISION_S3142',
+  US_PROBATION_CONDITIONS_S3563 = 'US_PROBATION_CONDITIONS_S3563',
+  US_CORPORATE_INSIDER_CONTRACT = 'US_CORPORATE_INSIDER_CONTRACT',
+  US_VOLUNTARY_VICTIM_CONSENT = 'US_VOLUNTARY_VICTIM_CONSENT',
+}
 
 /**
  * BSA §63 certificate — evidence admissibility artefact.
@@ -84,11 +106,23 @@ export interface EvidenceCertificate {
 }
 
 export interface CompetentAuthorities {
+  // India-side (§69 IT Rules 2009 R.3). Present iff jurisdiction is IN.
   unionHomeSecretary: { officerId: string; name: string } | null;
   stateHomeSecretaries: Array<{
     state: string;
     officerId: string;
     name: string;
+  }>;
+  // US-side. Under Title III / §2518 the authorizer is a court judge, not
+  // an executive officer. Present iff jurisdiction is US.
+  // TODO(JUDICIAL-DIRECTORY-INTEGRATION) resolve from AOUSC + state
+  // judicial directories rather than the stub list.
+  usFederalJudges?: Array<{ officerId: string; name: string; court: string }>;
+  usStateJudges?: Array<{
+    state: string;
+    officerId: string;
+    name: string;
+    court: string;
   }>;
 }
 
@@ -96,6 +130,12 @@ export interface PurgeSchedule {
   triggerEvent: 'AUTHORIZATION_CESSATION';
   retainForDays: number;
   statuteReference: string;
+  // US Title III sealing (§2518(8)(a)) — sealed recordings retained per
+  // court protective order. Optional so the India shape stays unchanged.
+  minRetentionDays?: number;
+  sealed?: boolean;
+  sealingStatute?: string;
+  note?: string;
 }
 
 export interface ValidationResult {
