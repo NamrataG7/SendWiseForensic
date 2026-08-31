@@ -42,14 +42,26 @@ export enum PrivilegeCategory {
   MEDICAL = 'MEDICAL',
   CLERGY = 'CLERGY',
   SPOUSAL = 'SPOUSAL',
+  // --- US-specific ---
   // US-namespaced variants. Distinct enum values from the India-side
   // labels so the Filter Team console shows unambiguous per-jurisdiction
-  // categories. A sibling worker is renaming the four unprefixed values
-  // above to IN_-prefixed forms; do NOT touch those in this PR.
+  // categories. TODO(IN-PREFIX-MIGRATION): rename unprefixed India values
+  // above to IN_-prefixed forms in a follow-up.
   US_ATTORNEY_CLIENT = 'US_ATTORNEY_CLIENT',
   US_MEDICAL_HIPAA = 'US_MEDICAL_HIPAA',
   US_CLERGY = 'US_CLERGY',
   US_SPOUSAL_TRAMMEL = 'US_SPOUSAL_TRAMMEL',
+  // --- end US-specific ---
+  // --- UK-specific ---
+  // UK privilege categories are UK_-prefixed so the Filter Team console
+  // cannot confuse them with the India (unprefixed) or US variants.
+  // See docs/LEGAL_FRAMEWORK_UK.md and packages/legal-framework/src/uk/.
+  UK_LPP = 'UK_LPP',                     // Legal professional privilege (R v Derby Magistrates ex p B)
+  UK_JOURNALISTIC = 'UK_JOURNALISTIC',   // PACE ss.9-11 + IPA 2016 ss.28-29
+  UK_MP_WILSON = 'UK_MP_WILSON',         // Wilson Doctrine / IPA 2016 s.26
+  UK_MEDICAL_DPA = 'UK_MEDICAL_DPA',     // DPA 2018 special category / UK GDPR Art. 9
+  UK_RELIGIOUS = 'UK_RELIGIOUS',         // Common-law considerations (no statutory blanket)
+  // --- end UK-specific ---
 }
 
 /**
@@ -68,8 +80,9 @@ export enum LegitimateAimIN {
   // TODO(UK-ADAPTER) add UK grounds.
 }
 
-export type LegitimateAim = LegitimateAimIN | LegitimateAimUS;
+export type LegitimateAim = LegitimateAimIN | LegitimateAimUS | LegitimateAimUK;
 
+// --- US-specific ---
 /**
  * US-specific grounds under Title III / ECPA. Every value is US_-prefixed
  * so cross-jurisdiction confusion is structurally impossible.
@@ -83,6 +96,19 @@ export enum LegitimateAimUS {
   US_CORPORATE_INSIDER_CONTRACT = 'US_CORPORATE_INSIDER_CONTRACT',
   US_VOLUNTARY_VICTIM_CONSENT = 'US_VOLUNTARY_VICTIM_CONSENT',
 }
+// --- end US-specific ---
+
+// --- UK-specific ---
+/**
+ * UK grounds under IPA 2016 s.19 (targeted interception). Every value is
+ * UK_-prefixed so cross-jurisdiction confusion is structurally impossible.
+ */
+export enum LegitimateAimUK {
+  UK_NATIONAL_SECURITY_IPA_S19_1_A = 'UK_NATIONAL_SECURITY_IPA_S19_1_A',
+  UK_SERIOUS_CRIME_IPA_S19_1_B = 'UK_SERIOUS_CRIME_IPA_S19_1_B',
+  UK_ECONOMIC_WELLBEING_IPA_S19_1_C = 'UK_ECONOMIC_WELLBEING_IPA_S19_1_C',
+}
+// --- end UK-specific ---
 
 /**
  * BSA §63 certificate — evidence admissibility artefact.
