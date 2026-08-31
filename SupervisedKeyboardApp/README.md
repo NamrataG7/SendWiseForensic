@@ -105,3 +105,100 @@ com/sendwiseforensic/supervisedkeyboard/
   follow-up PRs.
 - No cosmetic rename of `SafeKeyboardIME` and related classes; that is a
   separate follow-up.
+
+## Evidence pipeline
+
+The evidence pipeline exists only to satisfy an active warrant. In every
+non-Active state it is dormant — the gate short-circuits every entry
+point before any hash, signature, database write, or network call
+happens.
+
+Flow:
+
+```
+IME event
+  -> EvidenceRecorder.record(category, payloadProducer, contextAppPackage)
+     -> CollectionGate.canCollect(category, contextAppPackage)   [DENY -> return]
+     -> PrivilegeHint.classify(package, recipientHash)
+     -> hash chain: SHA-256(prevHash || payload || canonical meta)
+     -> EvidenceSigner.sign(payload || batchHash)   [RSA-2048, StrongBox preferred]
+     -> EvidenceStore.evidenceDao().insert(EvidenceRow)          [Room]
+     -> WorkManager enqueue EvidenceUploader (unique work, KEEP)
+        -> DeviceAttestation.check()                              [Play Integrity stub]
+        -> POST ${BACKEND_URL}/api/evidence/ingest
+           -> 2xx  -> markUploaded
+           -> 4xx (non-401) -> markDeadLettered
+           -> 401 / 5xx / net -> bumpAttempt + WorkManager retry
+```
+
+The **CollectionGate invariant** is: no persistence and no upload of
+authorization-relevant data may happen without a matching
+`CollectionGate.canCollect()` returning true. This is enforced by
+routing every evidence path through `EvidenceRecorder`, which calls the
+gate first. Every persistence/upload function is annotated
+`// COLLECTION_GATE_ONLY`.
+
+### `// COLLECTION_GATE_ONLY` inventory
+
+- `EvidenceRecorder.record(...)` — the sole recorder entry point;
+  consults `CollectionGate` before doing anything.
+- `EvidenceRecorder.enqueueUploadWorker()` — only invoked from `record`
+  after a successful gate check.
+- `EvidenceDao.insert(...)` — Room DAO insert; only called from
+  `EvidenceRecorder`.
+- `EvidenceUploader.doWork()` — WorkManager worker; only enqueued from
+  `EvidenceRecorder.enqueueUploadWorker`.
+- `SelfTamperReceiver.postTamperEventBestEffort(...)` — only called from
+  the receiver's `onReceive` after checking
+  `CollectionGate.currentState() is Active`.
+- The IME's KEYSTROKE_BATCH / APP_EVENT / RISK_DETECTION emits — each
+  wrapped in `EvidenceRecorder.record(...)`; the gate blocks in
+  non-Active modes.
+
+### Anonymised-risk-metadata pathway (upstream, exempted)
+
+`ViolationLogger.logViolation(...)` is the pre-existing privacy-first
+path that uploads only opaque `category / severity / action` counters
+tied to a hashed device id. It carries no content, no recipient, no
+package. It is not authorization-relevant and therefore is not gated on
+`CollectionGate`. Its three IME call sites are annotated
+`// COLLECTION_GATE_ONLY (anonymised-risk-metadata exempted pathway)` to
+make the intent explicit at review time. Every warrant-scoped risk event
+that flows through this path is *also* emitted via
+`EvidenceRecorder.record(DataCategory.RISK_DETECTION, ...)`, which the
+gate silently drops when supervision is not Active.
+
+### Package layout added by this PR
+
+```
+com/sendwiseforensic/supervisedkeyboard/
+  evidence/
+    EvidenceBatch.kt        // data class + PrivilegeFlag enum
+    EvidenceSigner.kt       // StrongBox-first RSA-2048 signing key
+    EvidenceStore.kt        // Room DB, DAO (COLLECTION_GATE_ONLY insert)
+    EvidenceRecorder.kt     // sole recorder entry point (COLLECTION_GATE_ONLY)
+    EvidenceUploader.kt     // WorkManager worker (COLLECTION_GATE_ONLY)
+  privilege/
+    PrivilegeHint.kt        // hashed-contact + app-package classifier
+  tamper/
+    RuntimeIntegrityChecker.kt  // emulator / root probe
+    SelfTamperReceiver.kt       // uninstall / package-change broadcast
+  attestation/
+    DeviceAttestation.kt        // Play Integrity stub
+```
+
+### Prototype stubs (all TODO-tagged)
+
+- `TODO(WIRE-TO-FORENSIC-CONSOLE)` — real evidence-ingest client, real
+  authorization refresh, real privilege registry sync, real tamper-event
+  outbox, real refresh signing.
+- `TODO(PLAY-INTEGRITY)` — `DeviceAttestation` returns a stub verdict;
+  `RuntimeIntegrityChecker` is a cheap substitute only.
+- `TODO(HARDWARE-KEYSTORE)` — `EvidenceSigner` falls back to a TEE-backed
+  key when StrongBox is unavailable; production must gate on
+  hardware attestation.
+- `TODO(PRIVILEGE-REGISTRY-VERIFICATION)` — the hard-coded legal /
+  medical app allowlist is not verified against statutory registries.
+- `TODO(FILTER-TEAM-INDEPENDENCE)` — on-device privilege flags are
+  hints; the authoritative decision belongs to the independent Filter
+  Team server-side.

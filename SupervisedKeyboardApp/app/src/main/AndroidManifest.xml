@@ -77,6 +77,17 @@
             android:exported="false"
             android:label="Judicial Supervision" />
 
+        <!-- Tamper detection: watch for uninstall / package change of THIS package. -->
+        <receiver
+            android:name=".tamper.SelfTamperReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PACKAGE_FULLY_REMOVED" />
+                <action android:name="android.intent.action.PACKAGE_CHANGED" />
+                <data android:scheme="package" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
