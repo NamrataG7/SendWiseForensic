@@ -4,6 +4,9 @@
     <string name="keyboard_name">Safe Keyboard</string>
     <string name="settings">Settings</string>
 
+    <!-- Persistent supervision indicator (IME candidate strip pill) -->
+    <string name="supervised_pill_label">SUPERVISED</string>
+
     <!-- Main screen -->
     <string name="enable_keyboard_title">Enable SafeKeyboard</string>
     <string name="enable_keyboard_description">To use SafeKeyboard, you need to enable it in your device settings</string>

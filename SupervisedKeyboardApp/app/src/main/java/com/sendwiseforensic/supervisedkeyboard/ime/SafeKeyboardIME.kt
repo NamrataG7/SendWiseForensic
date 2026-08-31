@@ -12,7 +12,10 @@ import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.widget.TextView
 import com.sendwiseforensic.supervisedkeyboard.R
+import com.sendwiseforensic.supervisedkeyboard.authorization.AuthorizationState
+import com.sendwiseforensic.supervisedkeyboard.authorization.CollectionGate
 import com.sendwiseforensic.supervisedkeyboard.nlp.ToxicityAnalyzer
 import com.sendwiseforensic.supervisedkeyboard.nlp.EnhancedToxicityAnalyzer
 import com.sendwiseforensic.supervisedkeyboard.ui.WarningOverlayManager
@@ -35,6 +38,8 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
     private var keyboardView: KeyboardView? = null
     private var keyboard: Keyboard? = null
     private var suggestionStrip: SuggestionStripView? = null
+    private var supervisedPill: TextView? = null
+    private var supervisedPillJob: Job? = null
 
     // Long-press handling for top-row digits (Q..P => 1..0) and backspace repeat.
     private val pressHandler = Handler(Looper.getMainLooper())
@@ -258,6 +263,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
         val root = layoutInflater.inflate(R.layout.keyboard_view, null)
         keyboardView = root.findViewById(R.id.keyboard_view)
         suggestionStrip = root.findViewById(R.id.suggestion_strip)
+        supervisedPill = root.findViewById(R.id.supervised_pill)
         keyboard = Keyboard(this, R.xml.qwerty)
         keyboardView?.keyboard = keyboard
         keyboardView?.setOnKeyboardActionListener(this)
@@ -265,6 +271,18 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
         // Tap suggestion -> replace current partial word via InputConnection.
         suggestionStrip?.onSuggestionTapped = { word ->
             replaceCurrentWord(word)
+        }
+
+        // Bind the persistent SUPERVISED pill to the CollectionGate state.
+        // Only visible while state is Active. Non-dismissible, informational.
+        supervisedPill?.visibility =
+            if (CollectionGate.currentState() is AuthorizationState.Active) View.VISIBLE else View.GONE
+        supervisedPillJob?.cancel()
+        supervisedPillJob = serviceScope.launch {
+            CollectionGate.state.collect { state ->
+                supervisedPill?.visibility =
+                    if (state is AuthorizationState.Active) View.VISIBLE else View.GONE
+            }
         }
         return root
     }
@@ -998,6 +1016,8 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
             handleOverlayCancelled()
         }
         super.onDestroy()
+        supervisedPillJob?.cancel()
+        supervisedPillJob = null
         serviceScope.cancel()
         cancelPendingTimers()
         pendingLiveAnalysis?.let { liveDebounceHandler.removeCallbacks(it) }

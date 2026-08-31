@@ -5,6 +5,27 @@
     android:orientation="vertical"
     android:background="@color/keyboard_background">
 
+    <!-- Persistent supervision pill: shown only when CollectionGate state
+         is Active. Wired in SafeKeyboardIME.onCreateInputView(). -->
+    <TextView
+        android:id="@+id/supervised_pill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginTop="4dp"
+        android:layout_marginBottom="2dp"
+        android:background="@drawable/pill_supervised"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp"
+        android:paddingTop="2dp"
+        android:paddingBottom="2dp"
+        android:text="@string/supervised_pill_label"
+        android:textColor="#FFFFFF"
+        android:textSize="10sp"
+        android:textStyle="bold"
+        android:letterSpacing="0.08"
+        android:visibility="gone" />
+
     <!-- Suggestion strip (44dp above keys) -->
     <com.sendwiseforensic.supervisedkeyboard.ime.SuggestionStripView
         android:id="@+id/suggestion_strip"
