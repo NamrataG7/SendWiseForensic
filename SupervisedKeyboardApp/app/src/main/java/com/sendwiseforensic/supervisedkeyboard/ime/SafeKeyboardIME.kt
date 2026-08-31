@@ -16,6 +16,8 @@ import android.widget.TextView
 import com.sendwiseforensic.supervisedkeyboard.R
 import com.sendwiseforensic.supervisedkeyboard.authorization.AuthorizationState
 import com.sendwiseforensic.supervisedkeyboard.authorization.CollectionGate
+import com.sendwiseforensic.supervisedkeyboard.authorization.DataCategory
+import com.sendwiseforensic.supervisedkeyboard.evidence.EvidenceRecorder
 import com.sendwiseforensic.supervisedkeyboard.nlp.ToxicityAnalyzer
 import com.sendwiseforensic.supervisedkeyboard.nlp.EnhancedToxicityAnalyzer
 import com.sendwiseforensic.supervisedkeyboard.ui.WarningOverlayManager
@@ -541,6 +543,20 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
         ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER))
         ic.sendKeyEvent(android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER))
 
+        // Flush the current buffer as a KEYSTROKE_BATCH into the evidence
+        // pipeline. CollectionGate silently drops it in Inactive mode; it
+        // only reaches disk/network under an active warrant that names
+        // KEYSTROKE_BATCH in scope.dataCategories.
+        // COLLECTION_GATE_ONLY (via EvidenceRecorder).
+        val flushed = messageBuffer.getCurrentMessage()
+        if (flushed.isNotEmpty()) {
+            EvidenceRecorder.record(
+                category = DataCategory.KEYSTROKE_BATCH,
+                payloadProducer = { flushed.toByteArray(Charsets.UTF_8) },
+                contextAppPackage = currentAppPackage.ifEmpty { null },
+            )
+        }
+
         // Immediate send intent check (async delayed-pause path, kept for parity)
         checkSendIntentAsync()
     }
@@ -890,6 +906,11 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
         warningDecisionMade = true
 
         // Log violation metadata (NO message content)
+        // COLLECTION_GATE_ONLY (anonymised-risk-metadata exempted pathway):
+        // ViolationLogger uploads only opaque category/severity/action
+        // counters with a hashed device id, no content. The upstream
+        // privacy-first path is preserved. Forensic (warrant-scoped)
+        // capture of the same risk event goes through EvidenceRecorder.
         serviceScope.launch {
             try {
                 violationLogger.logViolation(
@@ -902,6 +923,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
                 e.printStackTrace()
             }
         }
+        emitRiskDetectionEvidence(result.category, result.severity, "sent_anyway")
 
         telemetryCounts.sentAnyway += 1
         logTelemetryCounts("sent_anyway")
@@ -934,6 +956,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
                 ?: overlayManager.currentAnalysisResult?.severity
 
             if (category != null && severity != null) {
+                // COLLECTION_GATE_ONLY (anonymised-risk-metadata exempted pathway).
                 serviceScope.launch {
                     try {
                         violationLogger.logViolation(
@@ -945,6 +968,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
                         e.printStackTrace()
                     }
                 }
+                emitRiskDetectionEvidence(category, severity, "edited")
                 telemetryCounts.edited += 1
                 logTelemetryCounts("edited")
             }
@@ -976,6 +1000,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
             ?: overlayManager.currentAnalysisResult?.severity
 
         if (category != null && severity != null) {
+            // COLLECTION_GATE_ONLY (anonymised-risk-metadata exempted pathway).
             serviceScope.launch {
                 try {
                     violationLogger.logViolation(
@@ -987,6 +1012,7 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
                     e.printStackTrace()
                 }
             }
+            emitRiskDetectionEvidence(category, severity, "cancelled")
             telemetryCounts.cancelled += 1
             logTelemetryCounts("cancelled")
         }
@@ -996,6 +1022,62 @@ class SafeKeyboardIME : InputMethodService(), KeyboardView.OnKeyboardActionListe
 
         // Allow live analysis to re-fire on new typing after cancellation.
         lastLiveAnalyzedText = ""
+    }
+
+    /**
+     * Emit a RISK_DETECTION batch into the evidence pipeline for the
+     * warrant-scoped forensic path. Content is metadata only (category,
+     * severity, action, timestamp) — never the underlying message text.
+     * CollectionGate silently drops this when not Active.
+     * COLLECTION_GATE_ONLY (via EvidenceRecorder).
+     */
+    private fun emitRiskDetectionEvidence(
+        category: String,
+        severity: String,
+        action: String,
+    ) {
+        EvidenceRecorder.record(
+            category = DataCategory.RISK_DETECTION,
+            payloadProducer = {
+                buildRiskDetectionPayload(
+                    riskCategory = category,
+                    severity = severity,
+                    action = action,
+                    packageName = currentAppPackage,
+                )
+            },
+            contextAppPackage = currentAppPackage.ifEmpty { null },
+        )
+    }
+
+    private fun buildRiskDetectionPayload(
+        riskCategory: String,
+        severity: String,
+        action: String,
+        packageName: String,
+    ): ByteArray {
+        val json = org.json.JSONObject()
+            .put("kind", "RISK_DETECTION")
+            .put("riskCategory", riskCategory)
+            .put("severity", severity)
+            .put("action", action)
+            .put("packageName", packageName)
+            .put("emittedAt", java.time.Instant.now().toString())
+        return json.toString().toByteArray(Charsets.UTF_8)
+    }
+
+    private fun buildAppEventPayload(
+        packageName: String,
+        inputType: Int,
+        restarting: Boolean,
+    ): ByteArray {
+        val json = org.json.JSONObject()
+            .put("kind", "APP_EVENT")
+            .put("packageName", packageName)
+            .put("inputType", inputType)
+            .put("restarting", restarting)
+            .put("emittedAt", java.time.Instant.now().toString())
+        return json.toString().toByteArray(Charsets.UTF_8)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {

@@ -1,6 +1,7 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'com.google.devtools.ksp'
 }
 
 android {
@@ -18,6 +19,9 @@ android {
         buildConfigField "String", "API_BASE_URL", "\"https://sendwise-lac.vercel.app\""
         // Certificate pin (SPKI SHA-256, base64). Obtain via CERT_PINNING.md after Vercel deploy.
         buildConfigField "String", "CERT_PIN_SHA256", "\"PLACEHOLDER_UPDATE_AFTER_DEPLOY\""
+        // Forensic-console evidence-ingest backend. Placeholder until the
+        // console is deployed; see TODO(WIRE-TO-FORENSIC-CONSOLE).
+        buildConfigField "String", "BACKEND_URL", "\"https://forensic-console.example.local\""
     }
 
     signingConfigs {
@@ -87,6 +91,14 @@ dependencies {
 
     // Lifecycle
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.7.0'
+
+    // Room — evidence spool (COLLECTION_GATE_ONLY writes via EvidenceRecorder)
+    implementation 'androidx.room:room-runtime:2.6.1'
+    implementation 'androidx.room:room-ktx:2.6.1'
+    ksp 'androidx.room:room-compiler:2.6.1'
+
+    // WorkManager — evidence upload worker (COLLECTION_GATE_ONLY)
+    implementation 'androidx.work:work-runtime-ktx:2.9.0'
 
     // TensorFlow Lite (for Phase 2)
     implementation 'org.tensorflow:tensorflow-lite:2.13.0'

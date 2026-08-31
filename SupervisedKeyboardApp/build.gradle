@@ -1,6 +1,7 @@
 // Top-level build file
 buildscript {
     ext.kotlin_version = '1.9.0'
+    ext.ksp_version = '1.9.0-1.0.13'
     repositories {
         google()
         mavenCentral()
@@ -8,6 +9,7 @@ buildscript {
     dependencies {
         classpath 'com.android.tools.build:gradle:8.1.0'
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "com.google.devtools.ksp:com.google.devtools.ksp.gradle.plugin:$ksp_version"
     }
 }
 
