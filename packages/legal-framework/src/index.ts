@@ -1,15 +1,24 @@
 /**
- * @sendwise-forensic/legal-framework — barrel export.
+ * @sendwise-forensic/legal-framework - barrel export.
  */
+
+import type { LegalFrameworkAdapter } from './adapter.js';
+import { Jurisdiction } from './types.js';
+import { IndiaLegalFramework, indiaLegalFramework } from './india/index.js';
+import { UsLegalFramework, usLegalFramework } from './us/index.js';
+import { UkLegalFramework, ukLegalFramework } from './uk/index.js';
 
 export * from './types.js';
 export * from './schemas.js';
 export * from './adapter.js';
+
+// --- IN ---
 export { indiaLegalFramework, IndiaLegalFramework } from './india/index.js';
 export { STATUTES as IN_STATUTES } from './india/statutes.js';
 export type { StatuteCode as INStatuteCode, StatuteReference } from './india/statutes.js';
+// --- end IN ---
 
-// US adapter (Title III / ECPA / SCA / 4th Amendment).
+// --- US (Title III / ECPA / SCA / 4th Amendment) ---
 export {
   usLegalFramework,
   UsLegalFramework,
@@ -20,16 +29,22 @@ export {
   NON_US_STATUTE_PREFIXES,
 } from './us/statutes.js';
 export type { StatuteCode as USStatuteCode } from './us/statutes.js';
+// --- end US ---
 
-import { Jurisdiction } from './types.js';
-import type { LegalFrameworkAdapter } from './adapter.js';
-import { IndiaLegalFramework as _IndiaLegalFramework } from './india/index.js';
-import { UsLegalFramework as _UsLegalFramework } from './us/index.js';
+// --- UK (IPA 2016 + ECHR Art. 8) ---
+export { ukLegalFramework, UkLegalFramework } from './uk/index.js';
+export type {
+  UkCompetentAuthorities,
+  UkPurgeSchedule,
+} from './uk/index.js';
+export { STATUTES as UK_STATUTES } from './uk/statutes.js';
+export type { StatuteCode as UKStatuteCode } from './uk/statutes.js';
+// --- end UK ---
 
 /**
  * Thrown when a caller requests an adapter for a jurisdiction that has
  * not been implemented / registered. Never silently fall through to
- * another jurisdiction's adapter — mixing law across jurisdictions is
+ * another jurisdiction's adapter - mixing law across jurisdictions is
  * the exact class of bug we are engineering against.
  */
 export class JurisdictionNotSupportedError extends Error {
@@ -45,18 +60,30 @@ export class JurisdictionNotSupportedError extends Error {
 }
 
 /**
- * Per-jurisdiction adapter registry. Sibling worker will add UK.
+ * Per-jurisdiction adapter registry. Selection is by DB-recorded
+ * Case.jurisdiction, never by user pick. Cross-jurisdiction contamination
+ * is refused at both validation and certificate-generation time inside
+ * each adapter.
  */
-export const AdapterRegistry = {
-  [Jurisdiction.IN]: new _IndiaLegalFramework(),
-  [Jurisdiction.US]: new _UsLegalFramework(),
-  // TODO(UK-ADAPTER) — pending sibling PR.
-} as const satisfies Partial<Record<Jurisdiction, LegalFrameworkAdapter>>;
+export const AdapterRegistry: Readonly<
+  Partial<Record<Jurisdiction, LegalFrameworkAdapter>>
+> = {
+  [Jurisdiction.IN]: indiaLegalFramework,
+  [Jurisdiction.US]: usLegalFramework,
+  [Jurisdiction.UK]: ukLegalFramework,
+};
+void IndiaLegalFramework;
+void UsLegalFramework;
+void UkLegalFramework;
 
+/**
+ * Resolve the adapter for a jurisdiction. Throws
+ * `JurisdictionNotSupportedError` rather than falling through to another
+ * jurisdiction. `adapterFor` and `getAdapter` are aliases.
+ */
 export function adapterFor(j: Jurisdiction): LegalFrameworkAdapter {
-  const a = (AdapterRegistry as Partial<Record<Jurisdiction, LegalFrameworkAdapter>>)[j];
-  if (!a) {
-    throw new JurisdictionNotSupportedError(String(j));
-  }
+  const a = AdapterRegistry[j];
+  if (!a) throw new JurisdictionNotSupportedError(String(j));
   return a;
 }
+export const getAdapter = adapterFor;
