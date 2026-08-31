@@ -29,6 +29,31 @@ export default function LoginForm() {
         setLoading(false);
         return;
       }
+      // Route to onboarding if home_jurisdiction has not been set. We
+      // check via a lightweight fetch; the middleware will re-route as
+      // needed on subsequent navigations.
+      try {
+        const res = await fetch('/api/cases', { method: 'GET' });
+        // resolveCaller returns 403 if home_jurisdiction is null in some
+        // paths, but /api/cases only checks presence. We check the
+        // dedicated onboarding endpoint instead.
+        const meRes = await fetch('/api/officer/me').catch(() => null);
+        if (meRes && meRes.ok) {
+          const meBody = (await meRes.json().catch(() => ({}))) as {
+            ok?: boolean;
+            data?: { homeJurisdiction?: string | null };
+          };
+          if (meBody.ok && !meBody.data?.homeJurisdiction) {
+            router.push('/onboarding/jurisdiction');
+            router.refresh();
+            return;
+          }
+        }
+        // Silence the unused-response lint on res.
+        void res;
+      } catch {
+        // ignore; fall through to callback
+      }
       router.push(callbackUrl);
       router.refresh();
     } catch {

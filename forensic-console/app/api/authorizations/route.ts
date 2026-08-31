@@ -69,9 +69,26 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const validation = validateWarrantIssue(shape.data);
+  // Server-derive jurisdiction from Case.jurisdiction — never trust the
+  // wire. If the client sent a jurisdiction field, validateWarrantIssue
+  // will refuse the write if it disagrees with the DB row.
+  const { data: caseRow, error: caseErr } = await supabase
+    .from('case')
+    .select('id, jurisdiction')
+    .eq('id', shape.data.caseId)
+    .maybeSingle();
+  if (caseErr) {
+    return jsonError(500, `case lookup failed: ${caseErr.message}`);
+  }
+  if (!caseRow) {
+    return jsonError(404, `case ${shape.data.caseId} not found or not visible`);
+  }
+  const jurisdiction = (caseRow as { jurisdiction: 'IN' | 'US' | 'UK' })
+    .jurisdiction;
+
+  const validation = validateWarrantIssue(shape.data, jurisdiction);
   if (!validation.ok) {
-    return jsonError(422, 'Validation failed', {
+    return jsonError(validation.status ?? 422, 'Validation failed', {
       violations: validation.errors,
     });
   }
@@ -82,6 +99,7 @@ export async function POST(req: NextRequest) {
     .from('authorization')
     .insert({
       case_id: a.caseId,
+      jurisdiction,
       subject_id: a.subjectId,
       type: a.type,
       legitimate_aim: a.legitimateAim,

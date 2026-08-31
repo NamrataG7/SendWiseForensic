@@ -16,6 +16,26 @@ const config: Config = {
     './pages/**/*.{js,ts,jsx,tsx,mdx}',
     './components/**/*.{js,ts,jsx,tsx,mdx}',
     './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './lib/**/*.{js,ts,jsx,tsx,mdx}',
+  ],
+  safelist: [
+    // Jurisdiction theme utilities are composed in lib/jurisdiction-theme.ts;
+    // enumerate them so the JIT scanner keeps them even though they never
+    // appear as literal class strings in a component file.
+    'bg-slate-900',
+    'bg-neutral-900',
+    'bg-indigo-800',
+    'bg-teal-700',
+    'bg-[#1e3a8a]',
+    'bg-indigo-800/20',
+    'bg-[#1e3a8a]/25',
+    'bg-teal-700/25',
+    'text-indigo-100',
+    'text-slate-100',
+    'text-teal-100',
+    'border-indigo-700',
+    'border-[#1e3a8a]',
+    'border-teal-600',
   ],
   theme: {
     extend: {
@@ -30,6 +50,11 @@ const config: Config = {
         warning: '#b91c1c',     // red-700
         success: '#047857',     // emerald-700
         filter:  '#b45309',     // amber-700 — RESERVED for Filter Team console (independent-review scope)
+        // Per-jurisdiction accents. See lib/jurisdiction-theme.ts for the
+        // theme record. Every jurisdiction status bar / pill reads from
+        // JURISDICTION_THEME rather than raw palette names.
+        'us-accent': '#1e3a8a',  // slate-blue-700 — Title III / Berger accent
+        'uk-accent': '#0f766e',  // teal-700 — IPA 2016 / ECHR accent
       },
       fontFamily: {
         // UI: Inter with system fallback.

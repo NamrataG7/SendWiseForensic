@@ -4,9 +4,11 @@ import TopNav from '@/components/TopNav';
 import PageHeader from '@/components/PageHeader';
 import EmptyRegister from '@/components/EmptyRegister';
 import { Pill } from '@/components/Pill';
+import { JurisdictionPillLight } from '@/components/JurisdictionPill';
 import { listFilterTeamQueue } from '@/lib/db';
 import { resolveCaller } from '@/lib/api';
 import DecisionForm from './decision-form';
+import type { Jurisdiction } from '@/lib/entities';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -30,9 +32,33 @@ export default async function FilterTeamPage() {
   const supabase = createClient(await cookies());
   const caller = await resolveCaller(supabase);
   const authorised = caller.ok && caller.roles.includes('FILTER_TEAM');
+  const home: Jurisdiction | null = caller.ok ? caller.homeJurisdiction : null;
   const queue = authorised
     ? await listFilterTeamQueue(supabase, { limit: 200 })
     : [];
+
+  // Look up jurisdictions per row via evidence → session → authorization → case.
+  // RLS restricts what the caller can read; rows outside home_jurisdiction
+  // will simply not appear unless an explicit grant exists.
+  const jurisdictionByEvidenceId = new Map<string, Jurisdiction>();
+  if (authorised && queue.length > 0) {
+    const ids = queue.map((e) => e.id);
+    const { data } = await supabase
+      .from('evidence')
+      .select(
+        'id, monitoring_session:session_id!inner(authorization:authorization_id!inner(jurisdiction))',
+      )
+      .in('id', ids);
+    for (const row of (data ?? []) as unknown as Array<{
+      id: string;
+      monitoring_session: {
+        authorization: { jurisdiction: Jurisdiction } | null;
+      } | null;
+    }>) {
+      const j = row.monitoring_session?.authorization?.jurisdiction;
+      if (j) jurisdictionByEvidenceId.set(row.id, j);
+    }
+  }
 
   return (
     <>
@@ -62,6 +88,7 @@ export default async function FilterTeamPage() {
               <thead className="border-b border-slate-200 bg-amber-50 text-xs uppercase tracking-register text-filter">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Captured at</th>
+                  <th className="px-4 py-3 font-semibold">Jurisdiction</th>
                   <th className="px-4 py-3 font-semibold">Category</th>
                   <th className="px-4 py-3 font-semibold">Privilege</th>
                   <th className="px-4 py-3 font-semibold">Hash (tail)</th>
@@ -70,31 +97,62 @@ export default async function FilterTeamPage() {
                 </tr>
               </thead>
               <tbody>
-                {queue.map((e) => (
-                  <tr
-                    key={e.id}
-                    className="border-b border-slate-100 last:border-0 align-top"
-                  >
-                    <td className="px-4 py-3 text-xs text-ink">
-                      {e.capturedAt.toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Pill tone="muted">{e.category}</Pill>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Pill tone="primary">{e.privilegeFlag}</Pill>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-ink">
-                      …{e.payloadHash.slice(-14)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-[11px] text-muted">
-                      {e.id.slice(0, 8)}
-                    </td>
-                    <td className="px-4 py-3 min-w-[260px]">
-                      <DecisionForm evidenceId={e.id} />
-                    </td>
-                  </tr>
-                ))}
+                {queue.map((e) => {
+                  const rowJ = jurisdictionByEvidenceId.get(e.id) ?? home;
+                  const locked = !!rowJ && !!home && rowJ !== home;
+                  return (
+                    <tr
+                      key={e.id}
+                      className={`border-b border-slate-100 last:border-0 align-top ${locked ? 'bg-slate-50/70' : ''}`}
+                    >
+                      <td className="px-4 py-3 text-xs text-ink">
+                        {e.capturedAt.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-3">
+                        {rowJ ? (
+                          <JurisdictionPillLight jurisdiction={rowJ} />
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Pill tone="muted">{e.category}</Pill>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Pill tone="primary">{e.privilegeFlag}</Pill>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] text-ink">
+                        …{e.payloadHash.slice(-14)}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-[11px] text-muted">
+                        {e.id.slice(0, 8)}
+                      </td>
+                      <td className="px-4 py-3 min-w-[260px]">
+                        {locked ? (
+                          <div className="border border-slate-300 bg-white p-3 text-xs text-muted">
+                            <p className="font-semibold uppercase tracking-register text-ink">
+                              Locked — outside home jurisdiction
+                            </p>
+                            <p className="mt-1">
+                              You do not have jurisdiction to review this
+                              queue item. Request a grant.
+                            </p>
+                            <button
+                              type="button"
+                              disabled
+                              title="TODO(OFFICER-JURISDICTION-GRANT-REQUEST-UI)"
+                              className="mt-2 border border-slate-300 px-2 py-1 text-[10px] font-semibold uppercase tracking-register text-slate-500"
+                            >
+                              Request grant
+                            </button>
+                          </div>
+                        ) : (
+                          <DecisionForm evidenceId={e.id} />
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

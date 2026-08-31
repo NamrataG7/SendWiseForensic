@@ -46,6 +46,7 @@ interface OfficerRow {
   service_id: string | null;
   email: string | null;
   jurisdiction: 'IN' | 'US' | 'UK';
+  home_jurisdiction: 'IN' | 'US' | 'UK' | null;
   organization: string | null;
   identity_verified: boolean;
   active: boolean;
@@ -54,6 +55,7 @@ interface OfficerRow {
 interface AuthorizationRow {
   id: string;
   case_id: string;
+  jurisdiction: 'IN' | 'US' | 'UK';
   subject_id: string;
   type: Authorization['type'];
   legitimate_aim: string;
@@ -75,6 +77,7 @@ interface AuthorizationRow {
 
 interface SubjectRow {
   id: string;
+  jurisdiction: 'IN' | 'US' | 'UK';
   pseudonymous_label: string;
   identity_refs: {
     aadhaarHash?: string;
@@ -126,12 +129,14 @@ function toOfficer(r: OfficerRow): Officer {
     organisation: r.organization ?? '',
     serviceId: r.service_id ?? undefined,
     isActive: r.active,
+    homeJurisdiction: r.home_jurisdiction ?? r.jurisdiction ?? null,
   };
 }
 
 function toSubject(r: SubjectRow): Subject {
   return {
     id: r.id,
+    jurisdiction: r.jurisdiction,
     pseudonymousLabel: r.pseudonymous_label,
     identityRefs: {
       aadhaarHash: r.identity_refs?.aadhaarHash,
@@ -151,6 +156,7 @@ function toAuthorization(r: AuthorizationRow): Authorization {
   return {
     id: r.id,
     caseId: r.case_id,
+    jurisdiction: r.jurisdiction,
     subjectId: r.subject_id,
     type: r.type,
     // The DB stores legitimate_aim as free text; the enum-typed UI shape
