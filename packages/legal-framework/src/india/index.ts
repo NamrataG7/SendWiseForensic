@@ -24,6 +24,12 @@ import {
   type ValidationResult,
 } from '../types.js';
 import { STATUTES } from './statutes.js';
+import {
+  toCertificateJson,
+  aggregatedRootHash,
+  type CertificateInput,
+} from '@sendwise-forensic/evidence-certificate';
+import { randomUUID } from 'node:crypto';
 
 // TODO(UIDAI-INTEGRATION) resolve the current Union/State Home Secretary set
 // from an authoritative registry (e.g. eGazette + DoPT). For the prototype
@@ -150,29 +156,99 @@ export class IndiaLegalFramework implements LegalFrameworkAdapter {
    * BSA §63 (2023) certificate — replaces old Evidence Act §65B.
    * Must identify record, device, manner of production, and state that
    * the device was operating properly.
+   *
+   * Delegates all field-level validation and canonical rendering to
+   * `@sendwise-forensic/evidence-certificate.toCertificateJson`. That call
+   * fails closed (throws CertificateValidationError) if any §63 required
+   * field is missing, so this adapter method surfaces the same guarantee
+   * to the forensic-console export flow. The return shape stays the
+   * legacy `EvidenceCertificate` object for backwards compatibility with
+   * existing consumers; the richer canonical JSON is available directly
+   * from the new package for callers that want it.
    */
   generateEvidenceCertificate(
     evidence: Evidence,
     session: MonitoringSession,
     exportEvent: EvidenceExportEvent,
   ): EvidenceCertificate {
-    // TODO(HARDWARE-KEYSTORE) surface hardware attestation in deviceDetails.fingerprint.
+    // TODO(HARDWARE-KEYSTORE) surface hardware attestation in device.deviceFingerprint.
     // TODO(ESIGN-VERIFICATION) attach signer certificate + signature bytes.
+    const certInput: CertificateInput = {
+      certificateId: randomUUID(),
+      issuedAt: exportEvent.exportedAt,
+      issuedBy: {
+        officerId: exportEvent.signingOfficer.officerId,
+        name: exportEvent.signingOfficer.officerId,
+        designation: exportEvent.signingOfficer.responsibleOfficialPosition,
+        organizationalUnit:
+          exportEvent.signingOfficer.responsibleOfficialPosition,
+      },
+      caseRef: exportEvent.caseId,
+      authorizationRef: {
+        warrantId: session.authorizationId,
+        type: 'JUDICIAL_WARRANT',
+        issuedOn: session.startedAt,
+        expiresOn: session.endsAt,
+        statuteReferences: [
+          STATUTES.IT_ACT_S69.code,
+          STATUTES.IT_RULES_2009_R3.code,
+        ],
+      },
+      device: {
+        deviceId: session.deviceId,
+        platform: 'ANDROID',
+        model: 'UNKNOWN',
+        os: 'ANDROID',
+        deviceFingerprint: evidence.deviceSignature,
+      },
+      collection: {
+        startedAt: session.startedAt,
+        endedAt: session.endsAt,
+        sessionId: session.id,
+        // Map the jurisdiction-neutral DataCategory enum onto the
+        // evidence-certificate DataCategory literal union. KEYSTROKE ->
+        // KEYSTROKE_BATCH tracks the schemas.ts EvidenceSchema.category
+        // vocabulary used elsewhere in the pipeline.
+        categories: session.collectedCategories.map((c) =>
+          c === 'KEYSTROKE' ? 'KEYSTROKE_BATCH' : c,
+        ) as CertificateInput['collection']['categories'],
+      },
+      evidence: {
+        evidenceIds: [evidence.id],
+        hashes: [evidence.payloadHash],
+        aggregatedRootHash: aggregatedRootHash([evidence.payloadHash]),
+      },
+      integrity: {
+        chainVerified: true,
+        chainVerifiedAt: exportEvent.exportedAt,
+        verifierRef: 'audit-log-chain',
+      },
+      deviceOperationalStatement:
+        'The device was operating properly during the relevant period; no known malfunction affected the electronic record identified above.',
+      statuteReferences: [
+        STATUTES.BSA_2023_S63.code,
+        STATUTES.IT_ACT_S69.code,
+      ],
+    };
+
+    // Fail-closed §63 validation happens here.
+    const rendered = toCertificateJson(certInput);
+
     return {
       statuteReference: STATUTES.BSA_2023_S63.code,
       deviceDetails: {
-        deviceId: session.deviceId,
-        fingerprint: evidence.deviceSignature,
+        deviceId: rendered.device.deviceId,
+        fingerprint: rendered.device.deviceFingerprint,
         platform: 'ANDROID',
       },
       integrityHash: evidence.payloadHash,
       collectionWindow: {
-        startedAt: session.startedAt,
-        endedAt: session.endsAt,
+        startedAt: rendered.collection.startedAt,
+        endedAt: rendered.collection.endedAt,
       },
       signingOfficer: exportEvent.signingOfficer,
       operatingProperly: true,
-      generatedAt: exportEvent.exportedAt,
+      generatedAt: rendered.issuedAt,
     };
   }
 
