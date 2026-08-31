@@ -5,7 +5,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import type { RoleName } from '@/lib/entities';
+import type { Jurisdiction, RoleName } from '@/lib/entities';
 
 export function jsonError(status: number, error: string, extra?: Record<string, unknown>) {
   return NextResponse.json({ ok: false, error, ...extra }, { status });
@@ -15,11 +15,17 @@ export function jsonOk<T>(data: T, status = 200) {
   return NextResponse.json({ ok: true, data }, { status });
 }
 
-/** Resolve officer_id + roles for the caller of a route handler. */
+/** Resolve officer_id + roles + home_jurisdiction for the caller. */
 export async function resolveCaller(
   supabase: SupabaseClient,
 ): Promise<
-  | { ok: true; officerId: string; roles: RoleName[]; email: string | null }
+  | {
+      ok: true;
+      officerId: string;
+      roles: RoleName[];
+      email: string | null;
+      homeJurisdiction: Jurisdiction | null;
+    }
   | { ok: false; status: number; error: string }
 > {
   const {
@@ -31,7 +37,7 @@ export async function resolveCaller(
 
   const { data: officer, error: officerErr } = await supabase
     .from('officer')
-    .select('id, active')
+    .select('id, active, home_jurisdiction')
     .eq('auth_user_id', user.id)
     .maybeSingle();
   if (officerErr) {
@@ -65,7 +71,39 @@ export async function resolveCaller(
     officerId: (officer as { id: string }).id,
     roles,
     email: user.email ?? null,
+    homeJurisdiction:
+      ((officer as { home_jurisdiction: Jurisdiction | null }).home_jurisdiction) ?? null,
   };
+}
+
+/**
+ * Refuse callers whose home_jurisdiction is not in the allowed list.
+ * Cross-jurisdiction access outside home requires an explicit
+ * officer_jurisdiction_grant row (enforced at RLS); this helper is a
+ * cheap application-layer guard for route handlers.
+ */
+export function requireHomeJurisdictionOr(
+  caller: { homeJurisdiction: Jurisdiction | null },
+  list: Jurisdiction[],
+): { ok: true } | { ok: false; status: number; error: string } {
+  if (!caller.homeJurisdiction) {
+    return {
+      ok: false,
+      status: 403,
+      error:
+        'Officer has no home_jurisdiction. Complete /onboarding/jurisdiction before accessing this route.',
+    };
+  }
+  if (!list.includes(caller.homeJurisdiction)) {
+    return {
+      ok: false,
+      status: 403,
+      error:
+        `This route is restricted to officers whose home_jurisdiction is one of: ${list.join(', ')}. ` +
+        `Yours is '${caller.homeJurisdiction}'. Request a cross-jurisdiction grant.`,
+    };
+  }
+  return { ok: true };
 }
 
 export function requireRole(

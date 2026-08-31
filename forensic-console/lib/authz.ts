@@ -1,35 +1,32 @@
 /**
- * Authorization-issuance service (thin wrapper around the India adapter).
+ * Authorization-issuance service.
  *
- * Runs the same validation the DB triggers cannot express (Puttaswamy
- * 4-prong, Competent Authority allowlist, statutory duration bounds),
- * plus the Zod shape check derived from
- * @sendwise-forensic/legal-framework/schemas.
+ * Dispatches to the per-jurisdiction adapter selected from
+ * Case.jurisdiction (server-derived, NEVER client-picked). Runs the same
+ * validation the DB triggers cannot express (statutory proportionality
+ * prongs, Competent Authority allowlist, statutory duration bounds), plus
+ * the Zod shape check from @sendwise-forensic/legal-framework/schemas.
  *
- * The API route layer calls these; the DB layer catches anything we miss
- * via CHECK constraints and RLS.
+ * Cross-jurisdiction contamination — a statute prefix that does not match
+ * the case jurisdiction — is refused here as defense in depth against the
+ * DB trigger authorization_statute_prefix_matches_jurisdiction.
  */
 
 import {
   AuthorizationSchema,
   AuthorizationScopeSchema,
   ProportionalityChecklistSchema,
-  IndiaLegalFramework,
   AuthorizationType,
   type Authorization as LFAuthorization,
 } from '@sendwise-forensic/legal-framework';
 import { z } from 'zod';
-
-const india = new IndiaLegalFramework();
+import { getAdapterFor, JurisdictionNotSupportedError } from '@/lib/adapter-selector';
+import type { Jurisdiction } from '@/lib/entities';
 
 // ---------------------------------------------------------------------------
 // Public API-layer input shape
 // ---------------------------------------------------------------------------
 
-/**
- * Input the /api/authorizations route accepts. Shape mirrors the wizard.
- * Server re-runs everything the wizard does client-side.
- */
 export const IssueWarrantInputSchema = z
   .object({
     caseId: z.string().min(1),
@@ -57,31 +54,74 @@ export const IssueWarrantInputSchema = z
       .regex(/^[a-f0-9]{64}$/i, 'must be 64 hex characters (SHA-256)'),
     signedOrderDocumentRef: z.string().min(1),
     dpdpaExemptionRef: z.string().min(1).nullable().default(null),
+    /**
+     * Optional client-declared jurisdiction. Ignored for adapter selection
+     * (server always derives from Case.jurisdiction) but if present it MUST
+     * equal the server-derived value or the write is refused.
+     */
+    jurisdiction: z.enum(['IN', 'US', 'UK']).optional(),
   })
   .strict();
 
 export type IssueWarrantInput = z.infer<typeof IssueWarrantInputSchema>;
 
 /**
- * Validate the composed authorization object before hitting the DB.
- * Enforces:
- *   - Zod shape from @sendwise-forensic/legal-framework/schemas
- *   - Puttaswamy 4-prong (all justified)
- *   - Competent Authority allowlist
- *   - IT Rules 2009 R.11 duration cap (60 days per order)
+ * Statute-prefix guard. Every reference must be namespaced with the
+ * jurisdiction it belongs to; a mixed set is treated as contamination
+ * and refused with an explicit error listing the offending codes.
  */
-export function validateWarrantIssue(input: IssueWarrantInput): {
-  ok: true;
-  authorization: LFAuthorization;
-} | {
-  ok: false;
-  errors: string[];
-} {
+const PREFIX_BY_JURISDICTION: Record<Jurisdiction, string[]> = {
+  IN: ['IN_', 'IT_ACT', 'IT_RULES', 'BNS_', 'BSA_', 'DPDPA'],
+  US: ['US_'],
+  UK: ['UK_'],
+};
+
+function statutePrefixMatches(ref: string, j: Jurisdiction): boolean {
+  return PREFIX_BY_JURISDICTION[j].some((p) => ref.startsWith(p));
+}
+
+/**
+ * Validate the composed authorization object before hitting the DB.
+ * `jurisdiction` is derived server-side from the Case row and passed in
+ * by the route handler — never trusted from the wire.
+ */
+export function validateWarrantIssue(
+  input: IssueWarrantInput,
+  jurisdiction: Jurisdiction,
+): { ok: true; authorization: LFAuthorization }
+  | { ok: false; status?: number; errors: string[] } {
   const errors: string[] = [];
+
+  // Client-provided jurisdiction (if any) must match server-derived value.
+  if (input.jurisdiction && input.jurisdiction !== jurisdiction) {
+    return {
+      ok: false,
+      status: 409,
+      errors: [
+        `Client-declared jurisdiction '${input.jurisdiction}' does not match ` +
+          `Case.jurisdiction '${jurisdiction}'. Adapter selection is DB-driven.`,
+      ],
+    };
+  }
+
+  // Cross-jurisdiction contamination in statute references.
+  const contamination = input.statuteReferences.filter(
+    (r) => !statutePrefixMatches(r, jurisdiction),
+  );
+  if (contamination.length > 0) {
+    return {
+      ok: false,
+      status: 422,
+      errors: [
+        `REJECTED — cross-jurisdiction contamination: statute reference(s) ` +
+          `do not match Case.jurisdiction '${jurisdiction}': ${contamination.join(', ')}`,
+      ],
+    };
+  }
 
   // 1) Zod: assemble a full Authorization draft and validate the shape.
   const draft = {
-    id: 'draft', // real id is assigned by DB on insert
+    id: 'draft',
     caseId: input.caseId,
     subjectId: input.subjectId,
     type: AuthorizationType.JUDICIAL_WARRANT,
@@ -107,20 +147,36 @@ export function validateWarrantIssue(input: IssueWarrantInput): {
     for (const issue of parsed.error.issues) {
       errors.push(`${issue.path.join('.')}: ${issue.message}`);
     }
-    return { ok: false, errors };
+    return { ok: false, status: 422, errors };
   }
 
   const authorization = parsed.data;
 
-  // 2) India adapter: Puttaswamy prongs + Competent Authority allowlist
-  //    + JUDICIAL_WARRANT preconditions.
-  const validation = india.validateAuthorization(authorization);
+  // 2) Per-jurisdiction adapter validation.
+  let adapter;
+  try {
+    adapter = getAdapterFor(jurisdiction);
+  } catch (err) {
+    if (err instanceof JurisdictionNotSupportedError) {
+      return {
+        ok: false,
+        status: 501,
+        errors: [
+          `Jurisdiction '${jurisdiction}' has no registered adapter. ` +
+            `See @sendwise-forensic/legal-framework AdapterRegistry.`,
+        ],
+      };
+    }
+    throw err;
+  }
+
+  const validation = adapter.validateAuthorization(authorization);
   if (!validation.ok) {
     errors.push(...validation.errors);
   }
 
-  // 3) Duration bounds — IT Rules 2009 R.11 (60 days per order).
-  const bounds = india.computeMaxDuration(authorization);
+  // 3) Duration bounds (per-jurisdiction).
+  const bounds = adapter.computeMaxDuration(authorization);
   if (bounds.perOrderDays !== null) {
     const perOrderMs = bounds.perOrderDays * 24 * 60 * 60 * 1000;
     const requestedMs =
@@ -128,7 +184,7 @@ export function validateWarrantIssue(input: IssueWarrantInput): {
       new Date(authorization.issuedOn).getTime();
     if (requestedMs > perOrderMs) {
       errors.push(
-        `IT Rules 2009 R.11: requested duration exceeds ${bounds.perOrderDays} days per order (${bounds.statuteReferences.join(', ')})`,
+        `Duration exceeds ${bounds.perOrderDays} days per order (${bounds.statuteReferences.join(', ')})`,
       );
     }
     if (requestedMs <= 0) {
@@ -136,24 +192,39 @@ export function validateWarrantIssue(input: IssueWarrantInput): {
     }
   }
 
-  if (errors.length > 0) return { ok: false, errors };
+  if (errors.length > 0) return { ok: false, status: 422, errors };
   return { ok: true, authorization };
 }
 
 /**
- * Convenience wrapper — exposed per task spec so callers don't reach
- * into the adapter directly.
+ * Convenience wrapper — computes maximum duration for a given
+ * jurisdiction's adapter without exposing the adapter surface.
  */
-export function computeMaxDuration(auth: LFAuthorization) {
-  return india.computeMaxDuration(auth);
+export function computeMaxDuration(
+  auth: LFAuthorization,
+  jurisdiction: Jurisdiction,
+) {
+  return getAdapterFor(jurisdiction).computeMaxDuration(auth);
 }
 
 /**
- * Verify the issuing authority is on the current Competent Authority
- * allowlist. Cheap check the API route uses before writing.
+ * Verify the issuing authority is on the current per-jurisdiction
+ * Competent Authority allowlist. TODO(US-OVERSIGHT-DIRECTORY) and
+ * TODO(UK-JUDICIAL-COMMISSIONER-DIRECTORY): production integrations
+ * pending; stubs live in each adapter.
  */
-export function isCompetentAuthority(officerId: string): boolean {
-  const ca = india.getCompetentAuthorities();
+export function isCompetentAuthority(
+  officerId: string,
+  jurisdiction: Jurisdiction,
+): boolean {
+  const ca = getAdapterFor(jurisdiction).getCompetentAuthorities();
   if (ca.unionHomeSecretary?.officerId === officerId) return true;
-  return ca.stateHomeSecretaries.some((s) => s.officerId === officerId);
+  if (ca.stateHomeSecretaries.some((s) => s.officerId === officerId)) return true;
+  if (
+    ca.usFederalJudges?.some((j) => j.officerId === officerId) ||
+    ca.usStateJudges?.some((j) => j.officerId === officerId)
+  ) {
+    return true;
+  }
+  return false;
 }

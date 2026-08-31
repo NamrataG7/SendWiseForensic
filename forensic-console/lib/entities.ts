@@ -46,15 +46,35 @@ export type AuthorizationStatus =
   | 'EXPIRED'
   | 'REVOKED';
 
-/** IT Act §69 legitimate aims — canonical enum. */
+/**
+ * Legitimate aims across jurisdictions. IT Act §69 (IN),
+ * Title III §2516 (US), IPA 2016 §19 (UK). Each adapter narrows to
+ * its own set; UI branches on Case.jurisdiction to render the correct
+ * ground list.
+ */
 export type LegitimateAim =
+  // IN — IT Act §69
   | 'SOVEREIGNTY_INTEGRITY'
   | 'DEFENCE_OF_INDIA'
   | 'SECURITY_OF_STATE'
   | 'FRIENDLY_RELATIONS'
+  | 'FRIENDLY_RELATIONS_FOREIGN_STATES'
   | 'PUBLIC_ORDER'
   | 'PREVENTING_INCITEMENT_TO_COGNIZABLE_OFFENCE'
-  | 'INVESTIGATION_OF_OFFENCE';
+  | 'PREVENT_INCITEMENT_COGNIZABLE_OFFENCE'
+  | 'INVESTIGATION_OF_OFFENCE'
+  // US — Title III §2516
+  | 'US_PARTICULAR_OFFENSE_S2516'
+  | 'US_INVESTIGATION_OF_ORGANIZED_CRIME'
+  | 'US_NATIONAL_SECURITY_NON_FISA'
+  | 'US_PRETRIAL_SUPERVISION_S3142'
+  | 'US_PROBATION_CONDITIONS_S3563'
+  | 'US_CORPORATE_INSIDER_CONTRACT'
+  | 'US_VOLUNTARY_VICTIM_CONSENT'
+  // UK — IPA 2016 §19
+  | 'UK_NATIONAL_SECURITY_IPA_S19_1_A'
+  | 'UK_SERIOUS_CRIME_IPA_S19_1_B'
+  | 'UK_ECONOMIC_WELLBEING_IPA_S19_1_C';
 
 export type DataCategory =
   | 'KEYSTROKE'
@@ -104,6 +124,15 @@ export interface Officer {
   organisation: string;        // e.g., "Maharashtra Police"
   serviceId?: string;          // service number / IPS batch, etc.
   isActive: boolean;
+  /**
+   * Officer's home jurisdiction. Displayed prominently on every page.
+   * Cases visible to this officer default to rows where
+   * case.jurisdiction = homeJurisdiction. Cross-jurisdiction access
+   * requires an explicit officer_jurisdiction_grant row (see
+   * supabase/migrations/20260831120000_jurisdiction_fields.sql).
+   * null iff the officer has not completed /onboarding/jurisdiction.
+   */
+  homeJurisdiction: Jurisdiction | null;
 }
 
 export interface Case {
@@ -149,6 +178,13 @@ export interface AuthorizationScope {
 export interface Authorization {
   id: string;
   caseId: Case['id'];
+  /**
+   * Echoes Case.jurisdiction. Adapter selection is DB-driven from this
+   * value; officers never pick a jurisdiction at authorization time.
+   * DB trigger authorization_jurisdiction_matches_case guarantees
+   * this equals the parent case row.
+   */
+  jurisdiction: Jurisdiction;
   subjectId: Subject['id'];
   type: AuthorizationType;
   legitimateAim: LegitimateAim;
@@ -174,6 +210,8 @@ export interface Authorization {
 
 export interface Subject {
   id: string;
+  /** Server-derived from parent Case.jurisdiction; immutable at the DB. */
+  jurisdiction: Jurisdiction;
   /** System-generated pseudonym shown in most UI ("Subject A-7391"). */
   pseudonymousLabel: string;
   identityRefs: {

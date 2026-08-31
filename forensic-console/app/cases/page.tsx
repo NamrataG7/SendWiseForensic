@@ -6,6 +6,7 @@ import TopNav from '@/components/TopNav';
 import PageHeader from '@/components/PageHeader';
 import EmptyRegister from '@/components/EmptyRegister';
 import { Pill } from '@/components/Pill';
+import { JurisdictionPillLight } from '@/components/JurisdictionPill';
 import {
   getCurrentOfficer,
   listAuthorizationsForCase,
@@ -80,13 +81,31 @@ export default async function CasesPage() {
           }
           actions={
             <Link
-              href="/authorizations/new"
+              href="/cases/new"
               className="whitespace-nowrap bg-primary px-4 py-2.5 text-xs font-semibold uppercase tracking-register text-white hover:bg-primaryHover"
             >
-              Issue Authorization
+              New Case
             </Link>
           }
         />
+
+        {officer?.homeJurisdiction && (
+          <div className="mt-6 flex flex-wrap items-center gap-2 text-xs">
+            <span className="uppercase tracking-register text-muted">
+              Filter:
+            </span>
+            <span className="inline-flex items-center gap-2 border border-ink bg-ink px-2 py-1 font-semibold uppercase tracking-register text-white">
+              Home: {officer.homeJurisdiction}
+            </span>
+            <button
+              type="button"
+              className="border border-slate-300 px-2 py-1 uppercase tracking-register text-muted hover:border-ink hover:text-ink"
+              title="TODO(CROSS-JURISDICTION-FILTER-UI) — activates once grants are queryable client-side"
+            >
+              Show all jurisdictions I have grants for
+            </button>
+          </div>
+        )}
 
         {rows.length === 0 ? (
           <div className="mt-8">
@@ -100,9 +119,10 @@ export default async function CasesPage() {
             <table className="w-full text-left text-sm">
               <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-register text-muted">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">FIR / Case Ref</th>
+                  <th className="px-4 py-3 font-semibold">Case Ref</th>
+                  <th className="px-4 py-3 font-semibold">Jurisdiction</th>
                   <th className="px-4 py-3 font-semibold">Subject</th>
-                  <th className="px-4 py-3 font-semibold">Offences (BNS)</th>
+                  <th className="px-4 py-3 font-semibold">Offences</th>
                   <th className="px-4 py-3 font-semibold">Active Authz.</th>
                   <th className="px-4 py-3 font-semibold">Expires in</th>
                   <th className="px-4 py-3 font-semibold">Status</th>
@@ -124,6 +144,9 @@ export default async function CasesPage() {
                       <div className="mt-0.5 font-mono text-[11px] text-muted">
                         {c.id}
                       </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <JurisdictionPillLight jurisdiction={c.jurisdiction} />
                     </td>
                     <td className="px-4 py-4">
                       {subject ? (
