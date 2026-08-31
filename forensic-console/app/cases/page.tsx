@@ -7,12 +7,12 @@ import PageHeader from '@/components/PageHeader';
 import EmptyRegister from '@/components/EmptyRegister';
 import { Pill } from '@/components/Pill';
 import {
-  getCasesForOfficer,
-  getAuthorizationsForCase,
-  getSubjectForCase,
-  CURRENT_OFFICER_FIXTURE,
-} from '@/lib/forensic-store';
-import type { Case, Authorization, Subject } from '@/lib/entities';
+  getCurrentOfficer,
+  listAuthorizationsForCase,
+  listCasesForCurrentOfficer,
+  listSubjectsForCase,
+} from '@/lib/db';
+import type { Authorization, Case, Subject } from '@/lib/entities';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,23 +41,25 @@ export default async function CasesPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/login');
 
-  // TODO(WIRE-TO-SCHEMA): map supabase user -> Officer row, then feed real id.
-  const officer = CURRENT_OFFICER_FIXTURE;
-  const cases = await getCasesForOfficer(officer.id);
+  const officer = await getCurrentOfficer(supabase);
+  const cases = officer ? await listCasesForCurrentOfficer(supabase) : [];
 
   const rows: {
     c: Case;
     subject: Subject | null;
     auth: Authorization | null;
   }[] = await Promise.all(
-    cases.map(async (c) => ({
-      c,
-      subject: await getSubjectForCase(c.id),
-      auth:
-        (await getAuthorizationsForCase(c.id)).find(
-          (a) => a.status === 'ACTIVE',
-        ) ?? null,
-    })),
+    cases.map(async (c) => {
+      const [subjects, auths] = await Promise.all([
+        listSubjectsForCase(supabase, c.id),
+        listAuthorizationsForCase(supabase, c.id),
+      ]);
+      return {
+        c,
+        subject: subjects[0] ?? null,
+        auth: auths.find((a) => a.status === 'ACTIVE') ?? null,
+      };
+    }),
   );
 
   return (
@@ -65,9 +67,17 @@ export default async function CasesPage() {
       <TopNav />
       <main className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
         <PageHeader
-          eyebrow={`In the docket of ${officer.fullName}`}
+          eyebrow={
+            officer
+              ? `In the docket of ${officer.fullName}`
+              : 'In the register'
+          }
           title="Assigned Cases"
-          subtitle={`Cases in which ${officer.designation}, ${officer.organisation}, is a named investigating officer. Access is scoped to this docket; queries outside scope are refused at the data layer.`}
+          subtitle={
+            officer
+              ? `Cases in which ${officer.fullName}${officer.organisation ? `, ${officer.organisation},` : ''} is a named investigating officer. Access is scoped to this docket; queries outside scope are refused at the data layer.`
+              : 'No officer record is linked to your account. Contact your Supervising Officer to be added to the officer register.'
+          }
           actions={
             <Link
               href="/authorizations/new"

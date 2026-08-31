@@ -10,15 +10,14 @@ import { updateSession } from '@/utils/supabase/middleware';
  *   - /counsel  (defense-counsel portal landing; magic-link gated internally)
  *   - /prototype-notice
  *   - static assets
+ *   - /api/counsel/objections (magic-link gated in the handler; TODO(COUNSEL-PORTAL))
  *
  * Protected (require Supabase session):
- *   - /                      (redirect logic)
+ *   - /                              (redirect logic)
  *   - /cases, /cases/*
  *   - /authorizations, /authorizations/*
  *   - /audit
- *
- * TODO(WIRE-TO-SCHEMA): once Officer↔user role mapping is wired, gate
- * /audit to JUDICIAL_AUDITOR and /counsel/* to DEFENSE_COUNSEL.
+ *   - all other /api/* (per-route role checks in the handler)
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -29,7 +28,8 @@ export async function middleware(req: NextRequest) {
     pathname === '/login' ||
     pathname.startsWith('/auth/callback') ||
     pathname === '/counsel' ||
-    pathname === '/prototype-notice';
+    pathname === '/prototype-notice' ||
+    pathname === '/api/counsel/objections';
 
   if (publicPath) {
     return NextResponse.next();
@@ -37,14 +37,22 @@ export async function middleware(req: NextRequest) {
 
   const { response, user } = await updateSession(req);
 
-  const protectedPath =
+  const isProtectedApi = pathname.startsWith('/api/');
+  const isProtectedPage =
     pathname === '/' ||
     pathname.startsWith('/cases') ||
     pathname.startsWith('/authorizations') ||
     pathname.startsWith('/audit');
 
-  if (!protectedPath) return response;
+  if (!isProtectedApi && !isProtectedPage) return response;
   if (user) return response;
+
+  if (isProtectedApi) {
+    return NextResponse.json(
+      { ok: false, error: 'Not authenticated' },
+      { status: 401 },
+    );
+  }
 
   const loginUrl = new URL('/login', req.url);
   loginUrl.searchParams.set('callbackUrl', pathname);
