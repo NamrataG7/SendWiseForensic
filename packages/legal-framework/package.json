@@ -1,0 +1,16 @@
+{
+  "name": "@sendwise-forensic/legal-framework",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Pluggable jurisdiction adapter for SendWiseForensic. India is the primary implementation.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./india": "./src/india/index.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "peerDependencies": {
+    "zod": "^3.23.8"
+  }
+}
