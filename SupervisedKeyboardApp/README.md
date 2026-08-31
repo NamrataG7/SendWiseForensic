@@ -1,0 +1,1 @@
+Fork of SendWise SafeKeyboardApp. Prototype scaffold. Dual-mode CollectionGate, evidence signer, and tamper detection to be added in follow-up commits. See /tmp/sw-work/SendWiseForensic/docs/PROTOTYPE_NOTICE.md.
