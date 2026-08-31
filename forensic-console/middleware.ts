@@ -9,15 +9,24 @@ import { updateSession } from '@/utils/supabase/middleware';
  *   - /login, /auth/callback
  *   - /counsel  (defense-counsel portal landing; magic-link gated internally)
  *   - /prototype-notice
- *   - static assets
  *   - /api/counsel/objections (magic-link gated in the handler; TODO(COUNSEL-PORTAL))
+ *   - static assets
  *
  * Protected (require Supabase session):
  *   - /                              (redirect logic)
  *   - /cases, /cases/*
  *   - /authorizations, /authorizations/*
  *   - /audit
- *   - all other /api/* (per-route role checks in the handler)
+ *   - /exports/*
+ *   - /filter-team/*                  (further role-gated in the page + handlers)
+ *   - all other /api/*                (per-route role checks in the handler)
+ *
+ * Filter-team specific:
+ *   Session presence is checked here; the FILTER_TEAM role check happens
+ *   in each handler and in the page components (belt-and-braces with RLS).
+ *
+ * TODO(FILTER-TEAM-INDEPENDENCE): production requires organizational
+ * independence; prototype enforces role separation only.
  */
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
@@ -42,7 +51,9 @@ export async function middleware(req: NextRequest) {
     pathname === '/' ||
     pathname.startsWith('/cases') ||
     pathname.startsWith('/authorizations') ||
-    pathname.startsWith('/audit');
+    pathname.startsWith('/audit') ||
+    pathname.startsWith('/exports') ||
+    pathname.startsWith('/filter-team');
 
   if (!isProtectedApi && !isProtectedPage) return response;
   if (user) return response;

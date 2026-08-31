@@ -29,6 +29,7 @@ const config: Config = {
         primaryHover: '#312e81',// indigo-900
         warning: '#b91c1c',     // red-700
         success: '#047857',     // emerald-700
+        filter:  '#b45309',     // amber-700 — RESERVED for Filter Team console (independent-review scope)
       },
       fontFamily: {
         // UI: Inter with system fallback.

@@ -75,6 +75,51 @@ export function requireRole(
   return caller.roles.some((r) => allowed.includes(r));
 }
 
+/**
+ * Same as requireRole; readability alias when the caller wants to make it
+ * obvious multiple roles are acceptable.
+ *
+ *   requireRoleAny(caller, ['INVESTIGATING_OFFICER', 'SUPERVISING_OFFICER'])
+ */
+export function requireRoleAny(
+  caller: { roles: RoleName[] },
+  allowed: RoleName[],
+): boolean {
+  return requireRole(caller, allowed);
+}
+
+/**
+ * Filter-team invariant guard.
+ *
+ * The Filter Team's write surface is intentionally narrow: they may create
+ * filter_team_review rows against evidence rows visible to them (which RLS
+ * restricts to `quarantine_status = 'PENDING_FILTER'`) and nothing else.
+ *
+ * Any route that mutates evidence or evidence_export SHOULD call
+ * `refuseIfOnlyFilterTeam(caller)` first, so a filter-team account holder
+ * who somehow reaches an investigator route (e.g. bad link, replay) is
+ * rejected at the application layer even before the DB check.
+ *
+ * TODO(FILTER-TEAM-INDEPENDENCE): production requires organizational
+ * separation (independent judicial officers, not police). Prototype
+ * enforces role separation only.
+ */
+export function refuseIfOnlyFilterTeam(caller: {
+  roles: RoleName[];
+}): { ok: true } | { ok: false; status: number; error: string } {
+  const onlyFilterTeam =
+    caller.roles.length > 0 && caller.roles.every((r) => r === 'FILTER_TEAM');
+  if (onlyFilterTeam) {
+    return {
+      ok: false,
+      status: 403,
+      error:
+        'Filter Team accounts may only read the quarantine queue and file reviews.',
+    };
+  }
+  return { ok: true };
+}
+
 /** Client IP for audit context. Best-effort — proxies may strip. */
 export function requestIp(req: NextRequest): string | undefined {
   const xff = req.headers.get('x-forwarded-for');

@@ -260,10 +260,26 @@ export default async function CaseDetailPage({
           )}
 
           {tab === 'evidence' && (
-            <EmptyRegister
-              title="No evidence on record"
-              body="Evidence appears here once a monitoring session under an active authorization writes its first payload. Investigators see metadata only; raw payloads require a dual-officer export with a BSA §63 certificate."
-            />
+            <div className="space-y-4">
+              <div className="border border-slate-200 bg-white p-6">
+                <p className="eyebrow mb-3">Evidence metadata</p>
+                <p className="text-sm text-muted">
+                  Evidence rows for this case are listed on the dedicated
+                  evidence page, where investigators can build an export
+                  basket for dual-officer approval. Raw payloads never
+                  leave the encrypted cold store; the certificate lists
+                  only hashes and collection metadata per BSA §63.
+                </p>
+                <div className="mt-4">
+                  <Link
+                    href={`/cases/${c.id}/evidence`}
+                    className="bg-primary px-4 py-2 text-xs font-semibold uppercase tracking-register text-white hover:bg-primaryHover"
+                  >
+                    Open evidence table
+                  </Link>
+                </div>
+              </div>
+            </div>
           )}
 
           {tab === 'audit' && (
