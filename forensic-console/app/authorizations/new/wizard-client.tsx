@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useState, useTransition } from 'react';
+import { useRouter } from 'next/navigation';
 import StatuteRef from '@/components/StatuteRef';
 import { Pill, DummyVerifiedPill } from '@/components/Pill';
 
@@ -17,9 +17,9 @@ import { Pill, DummyVerifiedPill } from '@/components/Pill';
  *   6. Review Committee approval  (prototype stub)
  *   7. Confirmation
  *
- * TODO(WIRE-TO-SCHEMA): step 7 currently just displays a summary and does
- * NOT persist. Once Authorization write path lands, post to the API and
- * append AUTH_ISSUE to the audit chain in the same transaction.
+ * On confirmation, POST /api/authorizations. The server re-runs
+ * IndiaLegalFramework.validateAuthorization; any violation returned is
+ * surfaced inline as a list under the confirmation card.
  */
 
 const STEPS = [
@@ -36,15 +36,11 @@ const LEGITIMATE_AIMS: { value: string; label: string }[] = [
   { value: 'SOVEREIGNTY_INTEGRITY', label: 'Sovereignty and integrity of India' },
   { value: 'DEFENCE_OF_INDIA', label: 'Defence of India' },
   { value: 'SECURITY_OF_STATE', label: 'Security of the State' },
-  { value: 'FRIENDLY_RELATIONS', label: 'Friendly relations with foreign States' },
+  { value: 'FRIENDLY_RELATIONS_FOREIGN_STATES', label: 'Friendly relations with foreign States' },
   { value: 'PUBLIC_ORDER', label: 'Public order' },
   {
-    value: 'PREVENTING_INCITEMENT_TO_COGNIZABLE_OFFENCE',
+    value: 'PREVENT_INCITEMENT_COGNIZABLE_OFFENCE',
     label: 'Preventing incitement to the commission of any cognizable offence',
-  },
-  {
-    value: 'INVESTIGATION_OF_OFFENCE',
-    label: 'Investigation of any offence',
   },
 ];
 
@@ -55,7 +51,35 @@ const DATA_CATEGORIES = [
   { value: 'RISK_DETECTION', label: 'Risk detection outputs' },
 ];
 
+/**
+ * Competent Authority allowlist — mirrors
+ * packages/legal-framework/src/india/index.ts IN_COMPETENT_AUTHORITIES.
+ * Server re-checks this list; UI shows friendly labels here.
+ */
+const COMPETENT_AUTHORITIES: { id: string; label: string }[] = [
+  { id: 'IN-UNION-HS-STUB', label: 'Union Home Secretary (stub)' },
+  { id: 'IN-STATE-HS-MH-STUB', label: 'Maharashtra Home Secretary (stub)' },
+  { id: 'IN-STATE-HS-KA-STUB', label: 'Karnataka Home Secretary (stub)' },
+  { id: 'IN-STATE-HS-DL-STUB', label: 'Delhi Home Secretary (stub)' },
+];
+
+const STATUTE_REFS = [
+  'IT_ACT_S69',
+  'IT_RULES_2009_R3',
+  'IT_RULES_2009_R11',
+];
+
+async function sha256Hex(source: string | ArrayBuffer): Promise<string> {
+  const data =
+    typeof source === 'string' ? new TextEncoder().encode(source) : source;
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
 export default function WizardClient() {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({
     caseId: '',
@@ -69,10 +93,14 @@ export default function WizardClient() {
     legitimateAim: '',
     proportionality: '',
     proceduralSafeguards: '',
-    competentAuthority: '',
+    competentAuthorityId: '',
     orderFileName: '',
+    orderFileHash: '', // SHA-256 hex, computed client-side on select
     reviewNote: '',
   });
+  const [error, setError] = useState<string | null>(null);
+  const [violations, setViolations] = useState<string[]>([]);
+  const [isPending, startTransition] = useTransition();
 
   function upd<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -85,6 +113,18 @@ export default function WizardClient() {
         ? f.dataCategories.filter((x) => x !== v)
         : [...f.dataCategories, v],
     }));
+  }
+
+  async function onFileSelected(file: File | undefined) {
+    if (!file) {
+      upd('orderFileName', '');
+      upd('orderFileHash', '');
+      return;
+    }
+    upd('orderFileName', file.name);
+    const buf = await file.arrayBuffer();
+    const hash = await sha256Hex(buf);
+    upd('orderFileHash', hash);
   }
 
   const canAdvance = (() => {
@@ -103,7 +143,7 @@ export default function WizardClient() {
           form.proceduralSafeguards.trim()
         );
       case 4:
-        return form.competentAuthority.trim() && form.orderFileName.trim();
+        return form.competentAuthorityId.trim() && form.orderFileHash.length === 64;
       case 5:
         return true; // stub
       default:
@@ -111,9 +151,84 @@ export default function WizardClient() {
     }
   })();
 
+  function buildPayload() {
+    const issuedOn = new Date();
+    // IT Rules 2009 R.11: perOrderDays ≤ 60. Set expiry at exactly 60 days
+    // less one minute to stay strictly under the cap.
+    const expiresOn = new Date(issuedOn.getTime() + 60 * 24 * 60 * 60 * 1000 - 60 * 1000);
+    return {
+      caseId: form.caseId.trim(),
+      subjectId: form.subjectId.trim(),
+      legitimateAim: form.aim,
+      issuingAuthorityId: form.competentAuthorityId,
+      issuedOn: issuedOn.toISOString(),
+      expiresOn: expiresOn.toISOString(),
+      scope: {
+        dataCategories: form.dataCategories,
+        devices: form.devices
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        keywords: form.keywords
+          ? form.keywords.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined,
+        contextApps: form.contextApps
+          ? form.contextApps.split(',').map((s) => s.trim()).filter(Boolean)
+          : undefined,
+      },
+      proportionalityChecklist: {
+        legality: { justified: true, note: form.legality.trim() },
+        legitimateAim: { justified: true, note: form.legitimateAim.trim() },
+        proportionality: { justified: true, note: form.proportionality.trim() },
+        proceduralSafeguards: {
+          justified: true,
+          note: form.proceduralSafeguards.trim(),
+        },
+      },
+      reviewCommitteeApproval: null,
+      statuteReferences: STATUTE_REFS,
+      signedOrderDocumentHash: form.orderFileHash,
+      signedOrderDocumentRef: `prototype://uploaded/${form.orderFileName}`,
+      dpdpaExemptionRef: null,
+    };
+  }
+
+  function onSubmit() {
+    setError(null);
+    setViolations([]);
+    startTransition(async () => {
+      try {
+        const res = await fetch('/api/authorizations', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(buildPayload()),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          data?: { id?: string };
+          error?: string;
+          violations?: string[];
+        };
+        if (!res.ok || body.ok === false) {
+          setError(body.error ?? `Request failed (${res.status})`);
+          setViolations(body.violations ?? []);
+          return;
+        }
+        const newId = body.data?.id;
+        if (newId) {
+          router.push(`/authorizations/${newId}`);
+        } else {
+          router.push('/cases');
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Network error');
+      }
+    });
+  }
+
   return (
     <div className="grid gap-8 lg:grid-cols-[220px_1fr]">
-      {/* Stepper — collapses to horizontal chip strip on mobile */}
+      {/* Stepper */}
       <aside className="lg:sticky lg:top-24 lg:self-start">
         <ol className="flex flex-row gap-2 overflow-x-auto lg:flex-col lg:gap-1">
           {STEPS.map((label, i) => {
@@ -156,29 +271,28 @@ export default function WizardClient() {
               <input
                 value={form.caseId}
                 onChange={(e) => upd('caseId', e.target.value)}
-                placeholder="case_001"
-                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                placeholder="UUID from /cases"
+                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
               />
               <StatuteRef>
                 Case must exist in your assigned docket. Cross-docket
-                authorizations are refused at the DB layer (ENTITY_MODEL §3
-                invariant 4).
+                authorizations are refused by RLS on the authorization
+                table (ENTITY_MODEL §3 invariant 4).
               </StatuteRef>
             </div>
             <div>
               <label className="block text-sm font-medium text-ink">
-                Subject (pseudonymous label)
+                Subject ID
               </label>
               <input
                 value={form.subjectId}
                 onChange={(e) => upd('subjectId', e.target.value)}
-                placeholder="Subject A-7391"
-                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                placeholder="UUID of the subject row"
+                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
               />
               <StatuteRef>
                 Subject identity is stored only as a SHA-256 Aadhaar hash;
-                raw Aadhaar is never persisted (DPDPA 2023 §8 —
-                purpose limitation).
+                raw Aadhaar is never persisted (DPDPA 2023 §8 — purpose limitation).
               </StatuteRef>
             </div>
           </div>
@@ -205,8 +319,7 @@ export default function WizardClient() {
               </select>
               <StatuteRef>
                 IT Rules 2009 R.3 — the legitimate aim must be one of the
-                grounds enumerated in §69(1) of the IT Act, 2000. Any other
-                stated aim will not sustain the direction.
+                grounds enumerated in §69(1) of the IT Act, 2000.
               </StatuteRef>
             </div>
           </div>
@@ -237,9 +350,9 @@ export default function WizardClient() {
                 ))}
               </div>
               <StatuteRef>
-                Puttaswamy proportionality (proportionality prong) —
-                categories must be the narrowest set that achieves the
-                stated aim. The DB rejects out-of-scope evidence writes.
+                Puttaswamy proportionality — categories must be the
+                narrowest set that achieves the stated aim. The DB rejects
+                out-of-scope evidence writes at insert time.
               </StatuteRef>
             </fieldset>
 
@@ -250,8 +363,8 @@ export default function WizardClient() {
               <input
                 value={form.devices}
                 onChange={(e) => upd('devices', e.target.value)}
-                placeholder="dev_A7391_1"
-                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
+                placeholder="uuid, uuid"
+                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none font-mono"
               />
               <StatuteRef>
                 2009 Rules R.3 — the direction must specify the computer
@@ -297,30 +410,10 @@ export default function WizardClient() {
 
             {(
               [
-                {
-                  key: 'legality',
-                  label: 'Legality',
-                  hint: 'Which valid law backs this direction?',
-                  cite: 'Puttaswamy 2017 — prong 1.',
-                },
-                {
-                  key: 'legitimateAim',
-                  label: 'Legitimate aim',
-                  hint: 'What legitimate state interest is served?',
-                  cite: 'Puttaswamy 2017 — prong 2.',
-                },
-                {
-                  key: 'proportionality',
-                  label: 'Proportionality',
-                  hint: 'Why is this the least intrusive means?',
-                  cite: 'Puttaswamy 2017 — prong 3.',
-                },
-                {
-                  key: 'proceduralSafeguards',
-                  label: 'Procedural safeguards',
-                  hint: 'Which oversight and review mechanisms apply?',
-                  cite: 'Puttaswamy 2017 — prong 4; 2009 Rules R.22.',
-                },
+                { key: 'legality', label: 'Legality', hint: 'Which valid law backs this direction?', cite: 'Puttaswamy 2017 — prong 1.' },
+                { key: 'legitimateAim', label: 'Legitimate aim', hint: 'What legitimate state interest is served?', cite: 'Puttaswamy 2017 — prong 2.' },
+                { key: 'proportionality', label: 'Proportionality', hint: 'Why is this the least intrusive means?', cite: 'Puttaswamy 2017 — prong 3.' },
+                { key: 'proceduralSafeguards', label: 'Procedural safeguards', hint: 'Which oversight and review mechanisms apply?', cite: 'Puttaswamy 2017 — prong 4; 2009 Rules R.22.' },
               ] as const
             ).map((prong) => (
               <div key={prong.key}>
@@ -348,17 +441,25 @@ export default function WizardClient() {
             </h2>
             <div>
               <label className="block text-sm font-medium text-ink">
-                Competent Authority (name and designation)
+                Competent Authority
               </label>
-              <input
-                value={form.competentAuthority}
-                onChange={(e) => upd('competentAuthority', e.target.value)}
-                placeholder="Home Secretary, Government of Maharashtra"
-                className="mt-1 w-full border border-slate-300 px-3 py-2 text-sm focus:border-primary focus:outline-none"
-              />
+              <select
+                value={form.competentAuthorityId}
+                onChange={(e) => upd('competentAuthorityId', e.target.value)}
+                className="mt-1 w-full border border-slate-300 bg-white px-3 py-2 text-sm focus:border-primary focus:outline-none"
+              >
+                <option value="">— Select a Competent Authority —</option>
+                {COMPETENT_AUTHORITIES.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </select>
               <StatuteRef>
                 2009 Rules R.2 — for State-level directions, the Competent
-                Authority is the Secretary in charge of the Home Department.
+                Authority is the Secretary in charge of the Home Department;
+                for Union directions, the Union Home Secretary. Selections
+                outside this allowlist are refused by the server.
               </StatuteRef>
             </div>
             <div>
@@ -368,14 +469,12 @@ export default function WizardClient() {
               <input
                 type="file"
                 accept="application/pdf"
-                onChange={(e) =>
-                  upd('orderFileName', e.target.files?.[0]?.name ?? '')
-                }
+                onChange={(e) => onFileSelected(e.target.files?.[0])}
                 className="mt-1 block w-full text-sm text-muted file:mr-3 file:border file:border-slate-300 file:bg-slate-50 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:uppercase file:tracking-register hover:file:bg-slate-100"
               />
-              {form.orderFileName && (
-                <p className="mt-2 font-mono text-xs text-muted">
-                  Attached: {form.orderFileName}
+              {form.orderFileHash && (
+                <p className="mt-2 font-mono text-xs text-muted break-all">
+                  SHA-256: {form.orderFileHash}
                 </p>
               )}
               <div className="mt-3">
@@ -401,12 +500,13 @@ export default function WizardClient() {
               <strong className="font-semibold">Prototype stub —</strong>{' '}
               production requires a quorum record from Cabinet Secretary,
               Secretary Legal Affairs, and Secretary Telecommunications (or
-              State equivalents). This prototype accepts a single approving
-              user with the REVIEW_COMMITTEE role.
+              State equivalents). This prototype records approval in a
+              separate action (POST /api/authorizations/[id]/review) after
+              the warrant is created in PENDING_REVIEW.
             </div>
             <div>
               <label className="block text-sm font-medium text-ink">
-                Approver note
+                Approver note (optional; carried into audit context)
               </label>
               <textarea
                 rows={3}
@@ -431,32 +531,57 @@ export default function WizardClient() {
                 ['Subject', form.subjectId || '—'],
                 [
                   'Legitimate aim',
-                  LEGITIMATE_AIMS.find((a) => a.value === form.aim)?.label ??
-                    '—',
+                  LEGITIMATE_AIMS.find((a) => a.value === form.aim)?.label ?? '—',
                 ],
                 ['Data categories', form.dataCategories.join(', ') || '—'],
                 ['Devices', form.devices || '—'],
-                ['Competent Authority', form.competentAuthority || '—'],
+                [
+                  'Competent Authority',
+                  COMPETENT_AUTHORITIES.find(
+                    (c) => c.id === form.competentAuthorityId,
+                  )?.label ?? '—',
+                ],
                 ['Signed order', form.orderFileName || '—'],
+                ['Signed order SHA-256', form.orderFileHash || '—'],
               ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="grid grid-cols-3 gap-4 px-4 py-3"
-                >
+                <div key={k} className="grid grid-cols-3 gap-4 px-4 py-3">
                   <dt className="text-xs uppercase tracking-register text-muted">
                     {k}
                   </dt>
-                  <dd className="col-span-2 text-ink">{v}</dd>
+                  <dd className="col-span-2 text-ink break-all">{v}</dd>
                 </div>
               ))}
             </dl>
+
+            {(error || violations.length > 0) && (
+              <div className="border border-red-200 bg-red-50 p-4 text-sm text-warning">
+                {error && (
+                  <p className="font-semibold">Server rejected the warrant: {error}</p>
+                )}
+                {violations.length > 0 && (
+                  <>
+                    <p className="mt-2 font-semibold uppercase tracking-register text-xs">
+                      Statutory violations
+                    </p>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {violations.map((v) => (
+                        <li key={v}>{v}</li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            )}
+
             <div className="flex flex-wrap items-center gap-3">
-              <Pill tone="success">Ready to issue</Pill>
+              <Pill tone="success">Ready to submit</Pill>
               <DummyVerifiedPill />
             </div>
             <p className="text-xs text-muted">
-              On submission (post-schema), an AUTH_ISSUE entry will be
-              written to the audit chain in the same transaction.
+              On submission, the row is written to `authorization` with status
+              PENDING_REVIEW and an AUTH_ISSUE entry is appended to the
+              audit chain. Approval (transition to ACTIVE) is a separate
+              Review Committee action.
             </p>
           </div>
         )}
@@ -466,7 +591,7 @@ export default function WizardClient() {
           <button
             type="button"
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            disabled={step === 0}
+            disabled={step === 0 || isPending}
             className="border border-slate-300 px-4 py-2 text-xs font-semibold uppercase tracking-register text-ink disabled:text-slate-400"
           >
             Back
@@ -481,12 +606,14 @@ export default function WizardClient() {
               Continue
             </button>
           ) : (
-            <Link
-              href="/cases"
-              className="bg-success px-5 py-2 text-xs font-semibold uppercase tracking-register text-white hover:opacity-90"
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={isPending}
+              className="bg-success px-5 py-2 text-xs font-semibold uppercase tracking-register text-white hover:opacity-90 disabled:opacity-50"
             >
-              Submit (stub)
-            </Link>
+              {isPending ? 'Submitting…' : 'Submit for Review'}
+            </button>
           )}
         </div>
       </section>

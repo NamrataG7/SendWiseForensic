@@ -1,16 +1,17 @@
 import Link from 'next/link';
+import { cookies } from 'next/headers';
 import { notFound } from 'next/navigation';
+import { createClient } from '@/utils/supabase/server';
 import TopNav from '@/components/TopNav';
 import PageHeader from '@/components/PageHeader';
 import EmptyRegister from '@/components/EmptyRegister';
 import { Pill, DummyVerifiedPill } from '@/components/Pill';
 import {
   getCaseById,
-  getAuthorizationsForCase,
-  getSubjectForCase,
-  getSessionsForCase,
-  getEvidenceMetadataForCase,
-} from '@/lib/forensic-store';
+  listAuditTail,
+  listAuthorizationsForCase,
+  listSubjectsForCase,
+} from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,14 +31,28 @@ export default async function CaseDetailPage({
   params: { caseId: string };
   searchParams?: { tab?: Tab };
 }) {
-  const c = await getCaseById(params.caseId);
+  const supabase = createClient(await cookies());
+  const c = await getCaseById(supabase, params.caseId);
   if (!c) notFound();
 
   const tab: Tab = searchParams?.tab ?? 'overview';
-  const subject = await getSubjectForCase(c.id);
-  const auths = await getAuthorizationsForCase(c.id);
-  const sessions = await getSessionsForCase(c.id);
-  const evidence = await getEvidenceMetadataForCase(c.id);
+  const [subjects, auths] = await Promise.all([
+    listSubjectsForCase(supabase, c.id),
+    listAuthorizationsForCase(supabase, c.id),
+  ]);
+  const subject = subjects[0] ?? null;
+
+  // Audit tail scoped to authorizations under this case.
+  const auditPerAuth = await Promise.all(
+    auths.map((a) =>
+      listAuditTail(supabase, {
+        targetType: 'authorization',
+        targetId: a.id,
+        limit: 20,
+      }),
+    ),
+  );
+  const auditTail = auditPerAuth.flat().sort((a, b) => a.id - b.id);
 
   return (
     <>
@@ -54,9 +69,8 @@ export default async function CaseDetailPage({
           title={c.externalCaseRef}
           subtitle={
             <>
-              Case ID <span className="font-mono">{c.id}</span> ·{' '}
-              Jurisdiction {c.jurisdiction} · Filed{' '}
-              {c.createdAt.toDateString()}
+              Case ID <span className="font-mono">{c.id}</span> · Jurisdiction{' '}
+              {c.jurisdiction} · Filed {c.createdAt.toDateString()}
             </>
           }
           actions={
@@ -201,31 +215,40 @@ export default async function CaseDetailPage({
 
           {tab === 'subjects' && (
             <>
-              {subject ? (
-                <div className="max-w-2xl border border-slate-200 bg-white p-6">
-                  <p className="eyebrow mb-2">Pseudonymous label</p>
-                  <p className="font-serif text-2xl text-ink">
-                    {subject.pseudonymousLabel}
-                  </p>
-                  <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
-                    <div>
-                      <dt className="text-xs uppercase tracking-register text-muted">
-                        Aadhaar
-                      </dt>
-                      <dd className="font-mono text-ink">
-                        {subject.identityRefs.aadhaarHash ?? '—'}
-                      </dd>
+              {subjects.length > 0 ? (
+                <div className="space-y-4">
+                  {subjects.map((s) => (
+                    <div
+                      key={s.id}
+                      className="max-w-2xl border border-slate-200 bg-white p-6"
+                    >
+                      <p className="eyebrow mb-2">Pseudonymous label</p>
+                      <p className="font-serif text-2xl text-ink">
+                        {s.pseudonymousLabel}
+                      </p>
+                      <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <dt className="text-xs uppercase tracking-register text-muted">
+                            Aadhaar hash
+                          </dt>
+                          <dd className="font-mono text-ink break-all">
+                            {s.identityRefs.aadhaarHash ?? '—'}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase tracking-register text-muted">
+                            Devices enrolled
+                          </dt>
+                          <dd className="text-ink">{s.devices.length}</dd>
+                        </div>
+                      </dl>
+                      {s.identityRefs.verifiedByStub && (
+                        <div className="mt-4">
+                          <DummyVerifiedPill />
+                        </div>
+                      )}
                     </div>
-                    <div>
-                      <dt className="text-xs uppercase tracking-register text-muted">
-                        Devices enrolled
-                      </dt>
-                      <dd className="text-ink">{subject.devices.length}</dd>
-                    </div>
-                  </dl>
-                  <div className="mt-4">
-                    <DummyVerifiedPill />
-                  </div>
+                  ))}
                 </div>
               ) : (
                 <EmptyRegister
@@ -237,35 +260,51 @@ export default async function CaseDetailPage({
           )}
 
           {tab === 'evidence' && (
-            <>
-              {evidence.length === 0 && sessions.length === 0 ? (
-                <EmptyRegister
-                  title="No evidence on record"
-                  body="Evidence appears here once a monitoring session under an active authorization writes its first payload. Investigators see metadata only; raw payloads require a dual-officer export."
-                />
-              ) : (
-                <p className="text-sm text-muted">
-                  {evidence.length} evidence entries · {sessions.length}{' '}
-                  sessions
-                </p>
-              )}
-            </>
+            <EmptyRegister
+              title="No evidence on record"
+              body="Evidence appears here once a monitoring session under an active authorization writes its first payload. Investigators see metadata only; raw payloads require a dual-officer export with a BSA §63 certificate."
+            />
           )}
 
           {tab === 'audit' && (
             <div className="border border-slate-200 bg-white p-6">
               <p className="eyebrow mb-3">Audit trail for this case</p>
-              <p className="text-sm text-muted">
-                A read-only slice of the hash-chained audit log, scoped to
-                this case. Full chain is available to the Judicial Auditor at{' '}
-                <Link
-                  href="/audit"
-                  className="text-primary hover:underline"
-                >
-                  /audit
-                </Link>
-                .
-              </p>
+              {auditTail.length === 0 ? (
+                <p className="text-sm text-muted">
+                  No audit events recorded against this case&rsquo;s
+                  authorizations yet. Full chain is available to the Judicial
+                  Auditor at{' '}
+                  <Link href="/audit" className="text-primary hover:underline">
+                    /audit
+                  </Link>
+                  .
+                </p>
+              ) : (
+                <ol className="divide-y divide-slate-100">
+                  {auditTail.map((e) => (
+                    <li
+                      key={e.id}
+                      className="grid grid-cols-1 gap-2 py-3 text-sm sm:grid-cols-[120px_140px_1fr]"
+                    >
+                      <span className="font-mono text-xs text-muted">
+                        #{e.id}
+                      </span>
+                      <span className="text-xs text-muted">
+                        {e.timestamp.toLocaleString()}
+                      </span>
+                      <span className="text-ink">
+                        <span className="font-semibold">{e.action}</span>
+                        <span className="text-muted"> · {e.actorRole}</span>
+                        {e.targetId && (
+                          <span className="ml-2 font-mono text-[11px] text-muted">
+                            {e.targetType}:{e.targetId.slice(0, 8)}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
           )}
         </section>

@@ -6,7 +6,8 @@
  *
  * NOTE: These types are intentionally UI-shaped (Date objects, string IDs).
  * Wire-adapters between Supabase rows and these types live in
- * lib/forensic-store.ts. Search for TODO(WIRE-TO-SCHEMA) for handoff points.
+ * lib/db.ts (Supabase reads) and lib/authz.ts (validator wrappers).
+ * Search for TODO(WIRE-TO-SCHEMA) for handoff points.
  */
 
 // ---------------------------------------------------------------------------
