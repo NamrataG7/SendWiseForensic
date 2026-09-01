@@ -1,27 +1,14 @@
--- Admin role + officer invitation flow
--- Adds ADMIN role, officer_invitation table, and admin_audit view helper.
--- Prototype constraint: exactly 2 admin accounts recommended for dual-control.
+-- Admin role + officer invitation flow (part 2)
+-- Adds officer_invitation table, RLS, view.
+-- PRE-REQUISITE: 20260901000000_admin_enum.sql must have been run as its
+-- own SQL execution first (Postgres refuses to use a newly-added enum label
+-- in the same transaction that added it).
 -- TODO(TWO-PERSON-ADMIN-CREATION): production requires two admins to co-sign
 -- every officer creation. Prototype gate is single-admin action, audited.
 
--- 1a. Extend the role_name enum with 'ADMIN'. ALTER TYPE ... ADD VALUE cannot
--- run inside a transaction block, so this stands outside BEGIN/COMMIT.
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_enum e
-    JOIN pg_type t ON t.oid = e.enumtypid
-    WHERE t.typname = 'role_name'
-      AND e.enumlabel = 'ADMIN'
-  ) THEN
-    ALTER TYPE role_name ADD VALUE 'ADMIN';
-  END IF;
-END $$;
-
 BEGIN;
 
--- 1b. Seed the ADMIN role row.
+-- 1. Seed the ADMIN role row (enum label was added in the prior migration).
 INSERT INTO role (name, description)
 VALUES (
   'ADMIN',
