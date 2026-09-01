@@ -2,7 +2,7 @@
 -- See docs/ENTITY_MODEL.md §3.7 and attack model.
 -- TODO(EXTERNAL-ANCHORING): periodic Merkle root anchoring to external timestamping authority.
 
-CREATE TABLE audit_log (
+CREATE TABLE IF NOT EXISTS audit_log (
   id             bigserial PRIMARY KEY,
   prev_hash      text,               -- hex-encoded sha256; NULL only for the very first row
   actor_id       uuid,               -- officer.id or NULL for SYSTEM
@@ -22,10 +22,10 @@ COMMENT ON TABLE  audit_log IS
 COMMENT ON COLUMN audit_log.hash IS
   'BSA_S63 / integrity: sha256(prev_hash || canonical row payload). Chain break detects tampering.';
 
-CREATE INDEX audit_log_actor_idx     ON audit_log(actor_id);
-CREATE INDEX audit_log_action_idx    ON audit_log(action);
-CREATE INDEX audit_log_target_idx    ON audit_log(target_type, target_id);
-CREATE INDEX audit_log_timestamp_idx ON audit_log(timestamp);
+CREATE INDEX IF NOT EXISTS audit_log_actor_idx     ON audit_log(actor_id);
+CREATE INDEX IF NOT EXISTS audit_log_action_idx    ON audit_log(action);
+CREATE INDEX IF NOT EXISTS audit_log_target_idx    ON audit_log(target_type, target_id);
+CREATE INDEX IF NOT EXISTS audit_log_timestamp_idx ON audit_log(timestamp);
 
 -- ------------------------------------------------------------------
 -- Hash computation trigger
@@ -68,6 +68,7 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS audit_log_compute_hash_trg ON audit_log;
 CREATE TRIGGER audit_log_compute_hash_trg
   BEFORE INSERT ON audit_log
   FOR EACH ROW EXECUTE FUNCTION audit_log_compute_hash();
@@ -87,10 +88,12 @@ BEGIN
 END;
 $$;
 
+DROP TRIGGER IF EXISTS audit_log_no_update ON audit_log;
 CREATE TRIGGER audit_log_no_update
   BEFORE UPDATE ON audit_log
   FOR EACH ROW EXECUTE FUNCTION audit_log_reject_mutation();
 
+DROP TRIGGER IF EXISTS audit_log_no_delete ON audit_log;
 CREATE TRIGGER audit_log_no_delete
   BEFORE DELETE ON audit_log
   FOR EACH ROW EXECUTE FUNCTION audit_log_reject_mutation();
