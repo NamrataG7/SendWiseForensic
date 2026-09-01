@@ -111,13 +111,8 @@ class EvidenceConverters {
     @TypeConverter
     fun stringToPrivilege(s: String?): PrivilegeFlag? = s?.let { PrivilegeFlag.valueOf(it) }
 
-    // ByteArray passthrough — Room supports BLOB natively, converters are
-    // provided for symmetry with the other columns.
-    @TypeConverter
-    fun bytesToBlob(b: ByteArray?): ByteArray? = b
-
-    @TypeConverter
-    fun blobToBytes(b: ByteArray?): ByteArray? = b
+    // NOTE: no ByteArray converters — Room maps ByteArray to BLOB natively and
+    // KSP rejects identity converters as "Multiple methods define the same conversion".
 }
 
 @Database(
