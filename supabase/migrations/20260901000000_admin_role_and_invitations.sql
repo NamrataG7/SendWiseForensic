@@ -4,9 +4,24 @@
 -- TODO(TWO-PERSON-ADMIN-CREATION): production requires two admins to co-sign
 -- every officer creation. Prototype gate is single-admin action, audited.
 
+-- 1a. Extend the role_name enum with 'ADMIN'. ALTER TYPE ... ADD VALUE cannot
+-- run inside a transaction block, so this stands outside BEGIN/COMMIT.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_enum e
+    JOIN pg_type t ON t.oid = e.enumtypid
+    WHERE t.typname = 'role_name'
+      AND e.enumlabel = 'ADMIN'
+  ) THEN
+    ALTER TYPE role_name ADD VALUE 'ADMIN';
+  END IF;
+END $$;
+
 BEGIN;
 
--- 1. Add ADMIN to the role enum (if not present) and seed the role row.
+-- 1b. Seed the ADMIN role row.
 INSERT INTO role (name, description)
 VALUES (
   'ADMIN',
