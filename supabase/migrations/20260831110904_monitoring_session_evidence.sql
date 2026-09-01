@@ -7,11 +7,11 @@
 -- ------------------------------------------------------------------
 CREATE TABLE monitoring_session (
   id                          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  authorization_id            uuid NOT NULL REFERENCES authorization(id) ON DELETE RESTRICT,
+  authorization_id            uuid NOT NULL REFERENCES "authorization"(id) ON DELETE RESTRICT,
   device_id                   uuid NOT NULL REFERENCES device(id)        ON DELETE RESTRICT,
   started_at                  timestamptz NOT NULL DEFAULT now(),
   ends_at                     timestamptz NOT NULL,
-  -- Subset of authorization.scope.dataCategories; validated by trigger.
+  -- Subset of "authorization".scope.dataCategories; validated by trigger.
   collected_categories        data_category[] NOT NULL DEFAULT '{}',
   auto_termination_triggers   jsonb NOT NULL DEFAULT '{}'::jsonb,
   status                      monitoring_session_status NOT NULL DEFAULT 'ACTIVE',
@@ -22,8 +22,8 @@ CREATE TABLE monitoring_session (
 );
 
 COMMENT ON TABLE  monitoring_session IS 'A time-bounded collection window on a device under a specific authorization.';
-COMMENT ON COLUMN monitoring_session.ends_at IS 'IT_RULES_2009_R11: MUST be <= authorization.expires_on. Enforced by trigger.';
-COMMENT ON COLUMN monitoring_session.collected_categories IS 'IT_RULES_2009_R7: MUST be a subset of authorization.scope.dataCategories. Enforced by trigger.';
+COMMENT ON COLUMN monitoring_session.ends_at IS 'IT_RULES_2009_R11: MUST be <= "authorization".expires_on. Enforced by trigger.';
+COMMENT ON COLUMN monitoring_session.collected_categories IS 'IT_RULES_2009_R7: MUST be a subset of "authorization".scope.dataCategories. Enforced by trigger.';
 
 CREATE TRIGGER monitoring_session_set_updated_at
   BEFORE UPDATE ON monitoring_session
@@ -33,8 +33,8 @@ CREATE INDEX monitoring_session_auth_idx   ON monitoring_session(authorization_i
 CREATE INDEX monitoring_session_device_idx ON monitoring_session(device_id);
 CREATE INDEX monitoring_session_status_idx ON monitoring_session(status);
 
--- Trigger: enforce ends_at <= authorization.expires_on
--- and collected_categories ⊆ authorization.scope.dataCategories.
+-- Trigger: enforce ends_at <= "authorization".expires_on
+-- and collected_categories ⊆ "authorization".scope.dataCategories.
 CREATE OR REPLACE FUNCTION enforce_monitoring_session_scope()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -52,22 +52,22 @@ BEGIN
          ),
          a.status
     INTO v_expires_on, v_scope_cats, v_status
-    FROM authorization a
+    FROM "authorization" a
    WHERE a.id = NEW.authorization_id;
 
   IF v_expires_on IS NULL THEN
     RAISE EXCEPTION 'monitoring_session references unknown authorization %', NEW.authorization_id;
   END IF;
 
-  -- Invariant §3.2: ends_at <= authorization.expires_on.
+  -- Invariant §3.2: ends_at <= "authorization".expires_on.
   IF NEW.ends_at > v_expires_on THEN
     RAISE EXCEPTION
-      'monitoring_session.ends_at (%) exceeds authorization.expires_on (%)',
+      'monitoring_session.ends_at (%) exceeds "authorization".expires_on (%)',
       NEW.ends_at, v_expires_on
       USING ERRCODE = 'check_violation';
   END IF;
 
-  -- Invariant §3.3: collected_categories ⊆ authorization.scope.dataCategories.
+  -- Invariant §3.3: collected_categories ⊆ "authorization".scope.dataCategories.
   IF NEW.collected_categories IS NOT NULL AND array_length(NEW.collected_categories, 1) IS NOT NULL THEN
     SELECT array_agg(c::text)
       INTO v_bad
@@ -75,7 +75,7 @@ BEGIN
       WHERE c::text <> ALL (v_scope_cats);
     IF v_bad IS NOT NULL AND array_length(v_bad, 1) > 0 THEN
       RAISE EXCEPTION
-        'monitoring_session.collected_categories % not in authorization.scope.dataCategories %',
+        'monitoring_session.collected_categories % not in "authorization".scope.dataCategories %',
         v_bad, v_scope_cats
         USING ERRCODE = 'check_violation';
     END IF;
@@ -120,7 +120,7 @@ CREATE INDEX evidence_captured_at_idx  ON evidence(captured_at);
 CREATE INDEX evidence_quarantine_idx   ON evidence(quarantine_status) WHERE quarantine_status IS NOT NULL;
 CREATE INDEX evidence_privilege_idx    ON evidence(privilege_flag) WHERE privilege_flag <> 'NONE';
 
--- Invariant §3.1: evidence insert only when authorization.status = 'ACTIVE'.
+-- Invariant §3.1: evidence insert only when "authorization".status = 'ACTIVE'.
 CREATE OR REPLACE FUNCTION enforce_evidence_active_authorization()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -137,7 +137,7 @@ BEGIN
          )
     INTO v_status, v_expires_on, v_scope_cats
     FROM monitoring_session ms
-    JOIN authorization a ON a.id = ms.authorization_id
+    JOIN "authorization" a ON a.id = ms.authorization_id
    WHERE ms.id = NEW.session_id;
 
   IF v_status IS NULL THEN
@@ -152,7 +152,7 @@ BEGIN
 
   IF NEW.captured_at > v_expires_on THEN
     RAISE EXCEPTION
-      'evidence.captured_at (%) is after authorization.expires_on (%)',
+      'evidence.captured_at (%) is after "authorization".expires_on (%)',
       NEW.captured_at, v_expires_on
       USING ERRCODE = 'check_violation';
   END IF;
@@ -259,7 +259,7 @@ CREATE TRIGGER privilege_contact_registry_set_updated_at
 -- ------------------------------------------------------------------
 CREATE TABLE subject_objection (
   id                                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  authorization_id                  uuid NOT NULL REFERENCES authorization(id) ON DELETE RESTRICT,
+  authorization_id                  uuid NOT NULL REFERENCES "authorization"(id) ON DELETE RESTRICT,
   filed_by_counsel_id               uuid NOT NULL REFERENCES officer(id),
   grounds                           text NOT NULL,
   status                            text NOT NULL DEFAULT 'OPEN'
