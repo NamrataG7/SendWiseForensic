@@ -13,7 +13,7 @@ import {
   DummyVerificationError,
   TODO_UIDAI,
   type DummyIdentityToken,
-} from './types.js';
+} from './types';
 
 const AADHAAR_DIGITS = /^\d{12}$/;
 const TWENTY_FOUR_HOURS_MS = 24 * 60 * 60 * 1000;

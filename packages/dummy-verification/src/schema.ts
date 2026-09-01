@@ -13,7 +13,7 @@ import {
   TODO_ESIGN,
   TODO_REVIEW_COMMITTEE,
   TODO_UIDAI,
-} from './types.js';
+} from './types';
 
 const HEX64 = /^[a-f0-9]{64}$/i;
 const iso8601 = z

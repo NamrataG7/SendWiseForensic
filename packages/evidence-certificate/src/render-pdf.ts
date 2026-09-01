@@ -13,12 +13,12 @@
  * on a fresh clone). Callers must `npm install` before invoking.
  */
 
-import { canonicalStringify, toCertificateJson } from './render-json.js';
-import { sha256Hex } from './integrity.js';
+import { canonicalStringify, toCertificateJson } from './render-json';
+import { sha256Hex } from './integrity';
 import {
   SEC63_OPERATIONAL_STATEMENT_STATUTE_QUOTE,
-} from './fields.js';
-import type { CertificateInput, RenderedCertificateJson } from './types.js';
+} from './fields';
+import type { CertificateInput, RenderedCertificateJson } from './types';
 
 // Minimal ambient types so tsc does not require @types/pdf-lib at build time
 // in packages that only consume the JSON path. Real signatures come from

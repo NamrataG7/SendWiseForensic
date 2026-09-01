@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeDummyESignToken } from '../esign.js';
+import { makeDummyESignToken } from '../esign';
 import {
   DUMMY_ESIGN_MARKER,
   DummyVerificationError,
   TODO_ESIGN,
-} from '../types.js';
-import { DummyESignTokenSchema } from '../schema.js';
-import { FIXTURE_DOC_BYTES, fixedClock } from './_fixtures.js';
+} from '../types';
+import { DummyESignTokenSchema } from '../schema';
+import { FIXTURE_DOC_BYTES, fixedClock } from './_fixtures';
 
 test('esign: happy path returns a Zod-valid token with the dummy marker verbatim', async () => {
   const t = await makeDummyESignToken({

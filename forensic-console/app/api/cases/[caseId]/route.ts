@@ -18,16 +18,16 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(
   _req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: { caseId: string } },
 ) {
   const supabase = createClient(await cookies());
   const caller = await resolveCaller(supabase);
   if (!caller.ok) return jsonError(caller.status, caller.error);
 
   const [c, authorizations, subjects] = await Promise.all([
-    getCaseById(supabase, params.id),
-    listAuthorizationsForCase(supabase, params.id),
-    listSubjectsForCase(supabase, params.id),
+    getCaseById(supabase, params.caseId),
+    listAuthorizationsForCase(supabase, params.caseId),
+    listSubjectsForCase(supabase, params.caseId),
   ]);
   if (!c) return jsonError(404, 'case not found');
 

@@ -20,7 +20,7 @@ import {
   UkLegalFramework,
   addWorkingDays,
   type UkPurgeSchedule,
-} from '../index.js';
+} from '../index';
 import {
   AuthorizationStatus,
   AuthorizationType,

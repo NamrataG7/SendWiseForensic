@@ -6,14 +6,14 @@
  */
 
 import { z } from 'zod';
-import { SEC63_REQUIRED_FIELDS } from './fields.js';
-import { CertificateInputSchema } from './schema.js';
+import { SEC63_REQUIRED_FIELDS } from './fields';
+import { CertificateInputSchema } from './schema';
 import {
   CertificateValidationError,
   type CertificateInput,
   type MissingFieldReport,
   type RenderedCertificateJson,
-} from './types.js';
+} from './types';
 
 function getAtPath(obj: unknown, path: string): unknown {
   const parts = path.split('.');

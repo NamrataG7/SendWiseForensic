@@ -13,7 +13,7 @@
  * TODO(STATUTE-URLS) attach canonical U.S. Code URLs.
  */
 
-import type { StatuteReference } from '../india/statutes.js';
+import type { StatuteReference } from '../india/statutes';
 
 export type { StatuteReference };
 

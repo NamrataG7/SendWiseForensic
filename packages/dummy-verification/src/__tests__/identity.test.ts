@@ -1,18 +1,18 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeDummyAadhaarToken } from '../identity.js';
+import { makeDummyAadhaarToken } from '../identity';
 import {
   DUMMY_IDENTITY_MARKER,
   DummyVerificationError,
   TODO_UIDAI,
-} from '../types.js';
-import { DummyIdentityTokenSchema } from '../schema.js';
+} from '../types';
+import { DummyIdentityTokenSchema } from '../schema';
 import {
   FIXTURE_AADHAAR,
   FIXTURE_NAME,
   fixedClock,
-} from './_fixtures.js';
+} from './_fixtures';
 
 test('identity: happy path returns a Zod-valid token with the dummy marker verbatim', () => {
   const t = makeDummyAadhaarToken({

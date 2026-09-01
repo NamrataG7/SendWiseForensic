@@ -10,9 +10,9 @@ import assert from 'node:assert/strict';
 import {
   toCertificateJson,
   canonicalStringify,
-} from '../render-json.js';
-import { CertificateValidationError } from '../types.js';
-import { baseInput } from './_fixtures.js';
+} from '../render-json';
+import { CertificateValidationError } from '../types';
+import { baseInput } from './_fixtures';
 
 test('happy path: toCertificateJson returns a rendered §63 certificate', () => {
   const out = toCertificateJson(baseInput());
