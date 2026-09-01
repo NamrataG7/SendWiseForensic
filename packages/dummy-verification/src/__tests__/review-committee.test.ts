@@ -1,14 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeDummyReviewCommitteeApproval } from '../review-committee.js';
+import { makeDummyReviewCommitteeApproval } from '../review-committee';
 import {
   DUMMY_REVIEW_COMMITTEE_MARKER,
   DummyVerificationError,
   TODO_REVIEW_COMMITTEE,
-} from '../types.js';
-import { DummyReviewCommitteeTokenSchema } from '../schema.js';
-import { fixedClock } from './_fixtures.js';
+} from '../types';
+import { DummyReviewCommitteeTokenSchema } from '../schema';
+import { fixedClock } from './_fixtures';
 
 test('review-committee: full quorum (all three role types + count >= 3) sets quorumMet=true', () => {
   const t = makeDummyReviewCommitteeApproval({

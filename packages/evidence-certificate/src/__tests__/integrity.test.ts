@@ -6,7 +6,7 @@ import {
   verifyHashChain,
   aggregatedRootHash,
   type HashChainEntry,
-} from '../integrity.js';
+} from '../integrity';
 
 test('sha256Hex is stable and 64 hex chars', () => {
   const a = sha256Hex('hello');

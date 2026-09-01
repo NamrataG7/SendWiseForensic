@@ -6,8 +6,8 @@
  * entry in docs/PROTOTYPE_NOTICE.md.
  */
 
-export * from './types.js';
-export * from './banners.js';
+export * from './types';
+export * from './banners';
 export {
   DummyIdentityTokenSchema,
   DummyESignTokenSchema,
@@ -15,16 +15,16 @@ export {
   DummyReviewCommitteeApproverSchema,
   CombinedDummyVerificationBundleSchema,
   ReviewCommitteeRoleEnum,
-} from './schema.js';
+} from './schema';
 export {
   makeDummyAadhaarToken,
   type MakeDummyAadhaarTokenInput,
-} from './identity.js';
+} from './identity';
 export {
   makeDummyESignToken,
   type MakeDummyESignTokenInput,
-} from './esign.js';
+} from './esign';
 export {
   makeDummyReviewCommitteeApproval,
   type MakeDummyReviewCommitteeApprovalInput,
-} from './review-committee.js';
+} from './review-committee';

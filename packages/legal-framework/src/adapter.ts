@@ -8,7 +8,7 @@
  * One implementation per jurisdiction (see src/india for the India adapter).
  */
 
-import type { Authorization, Evidence, MonitoringSession } from './schemas.js';
+import type { Authorization, Evidence, MonitoringSession } from './schemas';
 import type {
   CompetentAuthorities,
   EvidenceCertificate,
@@ -16,7 +16,7 @@ import type {
   PrivilegeCategory,
   PurgeSchedule,
   ValidationResult,
-} from './types.js';
+} from './types';
 
 export interface EvidenceExportEvent {
   exportId: string;

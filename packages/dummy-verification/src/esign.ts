@@ -16,7 +16,7 @@ import {
   DummyVerificationError,
   TODO_ESIGN,
   type DummyESignToken,
-} from './types.js';
+} from './types';
 
 export interface MakeDummyESignTokenInput {
   signerName: string;

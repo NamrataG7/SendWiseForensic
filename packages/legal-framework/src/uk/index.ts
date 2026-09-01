@@ -32,8 +32,8 @@ import type {
   AuthorizationDurationBounds,
   EvidenceExportEvent,
   LegalFrameworkAdapter,
-} from '../adapter.js';
-import type { Authorization, Evidence, MonitoringSession } from '../schemas.js';
+} from '../adapter';
+import type { Authorization, Evidence, MonitoringSession } from '../schemas';
 import {
   AuthorizationType,
   Jurisdiction,
@@ -42,8 +42,8 @@ import {
   type EvidenceCertificate,
   type PurgeSchedule,
   type ValidationResult,
-} from '../types.js';
-import { STATUTES, findForeignStatuteRefs } from './statutes.js';
+} from '../types';
+import { STATUTES, findForeignStatuteRefs } from './statutes';
 import {
   toCertificateJson,
   aggregatedRootHash,

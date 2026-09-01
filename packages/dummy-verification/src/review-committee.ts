@@ -21,7 +21,7 @@ import {
   type DummyReviewCommitteeApprover,
   type DummyReviewCommitteeToken,
   type ReviewCommitteeRole,
-} from './types.js';
+} from './types';
 
 export interface MakeDummyReviewCommitteeApprovalInput {
   approvers: DummyReviewCommitteeApprover[];

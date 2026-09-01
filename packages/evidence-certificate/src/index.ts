@@ -8,8 +8,8 @@
  * See README.md and docs/LEGAL_FRAMEWORK_IN.md §4 for statutory context.
  */
 
-export * from './types.js';
-export * from './fields.js';
+export * from './types';
+export * from './fields';
 export {
   CertificateInputSchema,
   RenderedCertificateJsonSchema,
@@ -22,14 +22,14 @@ export {
   DataCategoryEnum,
   AuthorizationTypeRefEnum,
   PlatformEnum,
-} from './schema.js';
-export { toCertificateJson, canonicalStringify } from './render-json.js';
-export { toCertificatePdf } from './render-pdf.js';
-export type { PdfRenderOptions } from './render-pdf.js';
+} from './schema';
+export { toCertificateJson, canonicalStringify } from './render-json';
+export { toCertificatePdf } from './render-pdf';
+export type { PdfRenderOptions } from './render-pdf';
 export {
   sha256Hex,
   verifyHashChain,
   aggregatedRootHash,
   type HashChainEntry,
   type HashChainVerifyResult,
-} from './integrity.js';
+} from './integrity';

@@ -4,14 +4,14 @@ import assert from 'node:assert/strict';
 import {
   UsLegalFramework,
   findNonUsStatuteReferences,
-} from '../index.js';
+} from '../index';
 import { CertificateValidationError } from '@sendwise-forensic/evidence-certificate';
 import {
   AuthorizationType,
   Jurisdiction,
   PrivilegeCategory,
 } from '../../types.js';
-import { buildUsJudicialWarrant } from './_fixtures.js';
+import { buildUsJudicialWarrant } from './_fixtures';
 
 const adapter = new UsLegalFramework();
 

@@ -4,7 +4,7 @@
  * up when we just import from it.
  */
 
-import type { CertificateInput } from '../types.js';
+import type { CertificateInput } from '../types';
 
 // 64-hex SHA-256 stand-ins. Deliberately deterministic, not real digests.
 const H = (seed: string): string => {

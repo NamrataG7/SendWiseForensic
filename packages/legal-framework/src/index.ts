@@ -2,20 +2,20 @@
  * @sendwise-forensic/legal-framework - barrel export.
  */
 
-import type { LegalFrameworkAdapter } from './adapter.js';
-import { Jurisdiction } from './types.js';
-import { IndiaLegalFramework, indiaLegalFramework } from './india/index.js';
-import { UsLegalFramework, usLegalFramework } from './us/index.js';
-import { UkLegalFramework, ukLegalFramework } from './uk/index.js';
+import type { LegalFrameworkAdapter } from './adapter';
+import { Jurisdiction } from './types';
+import { IndiaLegalFramework, indiaLegalFramework } from './india/index';
+import { UsLegalFramework, usLegalFramework } from './us/index';
+import { UkLegalFramework, ukLegalFramework } from './uk/index';
 
-export * from './types.js';
-export * from './schemas.js';
-export * from './adapter.js';
+export * from './types';
+export * from './schemas';
+export * from './adapter';
 
 // --- IN ---
-export { indiaLegalFramework, IndiaLegalFramework } from './india/index.js';
-export { STATUTES as IN_STATUTES } from './india/statutes.js';
-export type { StatuteCode as INStatuteCode, StatuteReference } from './india/statutes.js';
+export { indiaLegalFramework, IndiaLegalFramework } from './india/index';
+export { STATUTES as IN_STATUTES } from './india/statutes';
+export type { StatuteCode as INStatuteCode, StatuteReference } from './india/statutes';
 // --- end IN ---
 
 // --- US (Title III / ECPA / SCA / 4th Amendment) ---
@@ -23,22 +23,22 @@ export {
   usLegalFramework,
   UsLegalFramework,
   findNonUsStatuteReferences,
-} from './us/index.js';
+} from './us/index';
 export {
   STATUTES as US_STATUTES,
   NON_US_STATUTE_PREFIXES,
-} from './us/statutes.js';
-export type { StatuteCode as USStatuteCode } from './us/statutes.js';
+} from './us/statutes';
+export type { StatuteCode as USStatuteCode } from './us/statutes';
 // --- end US ---
 
 // --- UK (IPA 2016 + ECHR Art. 8) ---
-export { ukLegalFramework, UkLegalFramework } from './uk/index.js';
+export { ukLegalFramework, UkLegalFramework } from './uk/index';
 export type {
   UkCompetentAuthorities,
   UkPurgeSchedule,
-} from './uk/index.js';
-export { STATUTES as UK_STATUTES } from './uk/statutes.js';
-export type { StatuteCode as UKStatuteCode } from './uk/statutes.js';
+} from './uk/index';
+export { STATUTES as UK_STATUTES } from './uk/statutes';
+export type { StatuteCode as UKStatuteCode } from './uk/statutes';
 // --- end UK ---
 
 /**

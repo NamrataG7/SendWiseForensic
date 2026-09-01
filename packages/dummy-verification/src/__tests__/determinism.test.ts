@@ -1,19 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeDummyAadhaarToken } from '../identity.js';
-import { makeDummyESignToken } from '../esign.js';
-import { makeDummyReviewCommitteeApproval } from '../review-committee.js';
+import { makeDummyAadhaarToken } from '../identity';
+import { makeDummyESignToken } from '../esign';
+import { makeDummyReviewCommitteeApproval } from '../review-committee';
 import {
   PROTOTYPE_BANNER_TEXT,
   wrapWithDummyMarker,
-} from '../banners.js';
+} from '../banners';
 import {
   FIXTURE_AADHAAR,
   FIXTURE_DOC_BYTES,
   FIXTURE_NAME,
   fixedClock,
-} from './_fixtures.js';
+} from './_fixtures';
 
 test('determinism: full bundle JSON matches known snapshot for a fixed input', async () => {
   const identity = makeDummyAadhaarToken({
