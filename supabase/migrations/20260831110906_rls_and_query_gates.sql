@@ -45,19 +45,19 @@ $$;
 -- ------------------------------------------------------------------
 -- authorization RLS
 -- ------------------------------------------------------------------
-ALTER TABLE authorization ENABLE ROW LEVEL SECURITY;
-ALTER TABLE authorization FORCE ROW LEVEL SECURITY;
+ALTER TABLE "authorization" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "authorization" FORCE ROW LEVEL SECURITY;
 
 -- SYSTEM sees everything (background jobs).
 CREATE POLICY authorization_system_all
-  ON authorization
+  ON "authorization"
   FOR ALL
   USING (auth_role() = 'SYSTEM')
   WITH CHECK (auth_role() = 'SYSTEM');
 
 -- Case-scoped roles: read authorizations for cases they are assigned to.
 CREATE POLICY authorization_case_scoped_read
-  ON authorization
+  ON "authorization"
   FOR SELECT
   USING (
     auth_role() IN (
@@ -68,14 +68,14 @@ CREATE POLICY authorization_case_scoped_read
 
 -- Competent Authority and Review Committee: broad read (issuance/oversight).
 CREATE POLICY authorization_oversight_read
-  ON authorization
+  ON "authorization"
   FOR SELECT
   USING (auth_role() IN ('COMPETENT_AUTHORITY','REVIEW_COMMITTEE'));
 
 -- Defense counsel: only authorizations they have filed objections against or are assigned to.
 -- Prototype: scoped through officer_id being the issuing_authority_id or via subject_objection.
 CREATE POLICY authorization_defense_read
-  ON authorization
+  ON "authorization"
   FOR SELECT
   USING (
     auth_role() = 'DEFENSE_COUNSEL'
@@ -103,7 +103,7 @@ CREATE POLICY monitoring_session_case_scoped_read
   USING (
     auth_role() IN ('INVESTIGATING_OFFICER','SUPERVISING_OFFICER','PROSECUTOR','DPO','JUDICIAL_AUDITOR')
     AND authorization_id IN (
-      SELECT id FROM authorization WHERE case_id IN (SELECT auth_caller_cases())
+      SELECT id FROM "authorization" WHERE case_id IN (SELECT auth_caller_cases())
     )
   );
 
@@ -130,7 +130,7 @@ CREATE POLICY evidence_investigative_read
     AND session_id IN (
       SELECT ms.id
         FROM monitoring_session ms
-        JOIN authorization a ON a.id = ms.authorization_id
+        JOIN "authorization" a ON a.id = ms.authorization_id
        WHERE a.status  = 'ACTIVE'
          AND a.case_id IN (SELECT auth_caller_cases())
     )

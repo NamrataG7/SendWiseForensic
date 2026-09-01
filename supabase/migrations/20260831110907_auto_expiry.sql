@@ -21,7 +21,7 @@ DECLARE
 BEGIN
   -- 1) Flip authorizations.
   WITH expired AS (
-    UPDATE authorization
+    UPDATE "authorization"
        SET status     = 'EXPIRED',
            updated_at = now()
      WHERE status     = 'ACTIVE'

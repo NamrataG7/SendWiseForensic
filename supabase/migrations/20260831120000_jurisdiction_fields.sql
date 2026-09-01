@@ -4,7 +4,7 @@
 -- ("Jurisdiction adapters" section) and in docs/LEGAL_FRAMEWORK_{IN,US,UK}.md.
 --
 -- This migration implements four of the eight technical enforcement mechanisms:
---   (1) immutable jurisdiction on Case and Subject
+--   (1) immutable jurisdiction ON "case" and Subject
 --   (2) Authorization inherits Case.jurisdiction (defense in depth)
 --   (4) statute references are jurisdiction-prefixed
 --   (5) RLS filters by officer home_jurisdiction (+ explicit grants)
@@ -18,7 +18,7 @@
 -- officer.home_jurisdiction column as specified in the design.
 
 -- ==================================================================
--- 1. Immutable jurisdiction on Case
+-- 1. Immutable jurisdiction ON "case"
 -- ==================================================================
 
 -- case.jurisdiction was introduced in 20260831110902_case_subject_device.sql.
@@ -86,10 +86,10 @@ CREATE TRIGGER subject_jurisdiction_immutable
 -- 3. Authorization inherits Case.jurisdiction (defense in depth)
 -- ==================================================================
 
-ALTER TABLE authorization
+ALTER TABLE "authorization"
   ADD COLUMN IF NOT EXISTS jurisdiction jurisdiction NOT NULL DEFAULT 'IN';
 
-COMMENT ON COLUMN authorization.jurisdiction IS
+COMMENT ON COLUMN "authorization".jurisdiction IS
   'Echoes case.jurisdiction. Defense in depth: even if a service-layer bug wrote '
   'the wrong case_id, the DB trigger authorization_jurisdiction_matches_case '
   'refuses INSERT/UPDATE when this column disagrees with the parent case. '
@@ -104,12 +104,12 @@ BEGIN
   SELECT c.jurisdiction INTO case_jur FROM "case" c WHERE c.id = NEW.case_id;
   IF case_jur IS NULL THEN
     RAISE EXCEPTION
-      'authorization.case_id % does not resolve to a case row', NEW.case_id
+      '"authorization".case_id % does not resolve to a case row', NEW.case_id
       USING ERRCODE = 'foreign_key_violation';
   END IF;
   IF NEW.jurisdiction IS DISTINCT FROM case_jur THEN
     RAISE EXCEPTION
-      'authorization.jurisdiction (%) does not match case.jurisdiction (%) for case_id %. '
+      '"authorization".jurisdiction (%) does not match case.jurisdiction (%) for case_id %. '
       'Cross-jurisdiction contamination refused (README.md "Jurisdiction adapters" mechanism 2).',
       NEW.jurisdiction, case_jur, NEW.case_id
       USING ERRCODE = 'check_violation';
@@ -118,16 +118,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS authorization_jurisdiction_matches_case ON authorization;
+DROP TRIGGER IF EXISTS authorization_jurisdiction_matches_case ON "authorization";
 CREATE TRIGGER authorization_jurisdiction_matches_case
-  BEFORE INSERT OR UPDATE OF case_id, jurisdiction ON authorization
+  BEFORE INSERT OR UPDATE OF case_id, jurisdiction ON "authorization"
   FOR EACH ROW EXECUTE FUNCTION authorization_jurisdiction_matches_case_fn();
 
 -- ==================================================================
 -- 4. Statute-reference prefix matches jurisdiction
 -- ==================================================================
 --
--- Every element of authorization.statute_references must start with the
+-- Every element of "authorization".statute_references must start with the
 -- jurisdiction's prefix: 'IN_', 'US_', or 'UK_'.
 --
 -- Empty arrays are allowed (a DRAFT authorization may not yet have citations).
@@ -137,7 +137,7 @@ CREATE TRIGGER authorization_jurisdiction_matches_case
 -- with early India records, but new code SHOULD use 'IN_CONST_ART_21_PUTTASWAMY'.
 
 -- Data migration: prefix legacy India codes emitted before this migration.
-UPDATE authorization
+UPDATE "authorization"
 SET statute_references = ARRAY(
   SELECT
     CASE
@@ -176,7 +176,7 @@ BEGIN
 
     IF position(required_prefix in elem) <> 1 THEN
       RAISE EXCEPTION
-        'authorization.statute_references contains element % which does not carry '
+        '"authorization".statute_references contains element % which does not carry '
         'the jurisdiction prefix % (jurisdiction = %). Cross-prefix contamination '
         'refused (README.md "Jurisdiction adapters" mechanism 4).',
         elem, required_prefix, NEW.jurisdiction
@@ -188,9 +188,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS authorization_statute_prefix_matches_jurisdiction ON authorization;
+DROP TRIGGER IF EXISTS authorization_statute_prefix_matches_jurisdiction ON "authorization";
 CREATE TRIGGER authorization_statute_prefix_matches_jurisdiction
-  BEFORE INSERT OR UPDATE OF statute_references, jurisdiction ON authorization
+  BEFORE INSERT OR UPDATE OF statute_references, jurisdiction ON "authorization"
   FOR EACH ROW EXECUTE FUNCTION authorization_statute_prefix_matches_jurisdiction_fn();
 
 -- ==================================================================
@@ -230,7 +230,7 @@ CREATE INDEX IF NOT EXISTS officer_jurisdiction_grant_officer_idx
   WHERE revoked_at IS NULL;
 
 -- ==================================================================
--- 6. RLS: jurisdiction filter on case / authorization / evidence
+-- 6. RLS: jurisdiction filter ON "case" / authorization / evidence
 -- ==================================================================
 --
 -- These policies COMPLEMENT (they do not replace) the existing case-scoped
@@ -282,9 +282,9 @@ CREATE POLICY case_jurisdiction_restrict
   USING (jurisdiction = ANY (current_officer_jurisdictions()));
 
 -- authorization
-DROP POLICY IF EXISTS authorization_jurisdiction_restrict ON authorization;
+DROP POLICY IF EXISTS authorization_jurisdiction_restrict ON "authorization";
 CREATE POLICY authorization_jurisdiction_restrict
-  ON authorization
+  ON "authorization"
   AS RESTRICTIVE
   FOR SELECT
   USING (jurisdiction = ANY (current_officer_jurisdictions()));
@@ -302,7 +302,7 @@ CREATE POLICY evidence_jurisdiction_restrict
     EXISTS (
       SELECT 1
       FROM monitoring_session ms
-      JOIN authorization a ON a.id = ms.authorization_id
+      JOIN "authorization" a ON a.id = ms.authorization_id
       WHERE ms.id = evidence.session_id
         AND a.jurisdiction = ANY (current_officer_jurisdictions())
     )
@@ -311,10 +311,10 @@ CREATE POLICY evidence_jurisdiction_restrict
 -- ==================================================================
 -- End of migration.
 -- Triggers installed:
---   - case_jurisdiction_immutable            (immutability on case)
+--   - case_jurisdiction_immutable            (immutability ON "case")
 --   - subject_jurisdiction_immutable         (immutability on subject)
 --   - authorization_jurisdiction_matches_case
---         (authorization.jurisdiction = case.jurisdiction, on INSERT + UPDATE of case_id/jurisdiction)
+--         ("authorization".jurisdiction = case.jurisdiction, on INSERT + UPDATE of case_id/jurisdiction)
 --   - authorization_statute_prefix_matches_jurisdiction
 --         (each statute_references element carries IN_/US_/UK_ prefix, with the
 --          legacy CONST_ART_21_PUTTASWAMY exception for India)

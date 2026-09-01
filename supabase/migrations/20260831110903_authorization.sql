@@ -1,7 +1,7 @@
 -- Authorization — the warrant / order that gates all collection.
 -- See docs/ENTITY_MODEL.md §1 and §3.6.
 
-CREATE TABLE authorization (
+CREATE TABLE "authorization" (
   id                              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id                         uuid NOT NULL REFERENCES "case"(id)   ON DELETE RESTRICT,
   subject_id                      uuid NOT NULL REFERENCES subject(id)  ON DELETE RESTRICT,
@@ -43,30 +43,30 @@ CREATE TABLE authorization (
   )
 );
 
-COMMENT ON TABLE  authorization IS
+COMMENT ON TABLE  "authorization" IS
   'IT_ACT_S69 / IT_RULES_2009: legal basis for collection. Immutable once ACTIVE except for status transitions and revocation_log appends.';
-COMMENT ON COLUMN authorization.expires_on IS
+COMMENT ON COLUMN "authorization".expires_on IS
   'IT_RULES_2009_R11: max 60 days per order, 180 days total per subject for JUDICIAL_WARRANT. Cumulative cap enforced at API layer.';
-COMMENT ON COLUMN authorization.scope IS
+COMMENT ON COLUMN "authorization".scope IS
   'IT_RULES_2009_R7: scope is narrow-tailored — dataCategories[], devices[], timeWindows[], keywords[], contextApps[].';
-COMMENT ON COLUMN authorization.proportionality_checklist IS
+COMMENT ON COLUMN "authorization".proportionality_checklist IS
   'PUTTASWAMY_2017: four prongs (legality, legitimateAim, necessity, proportionality) — each with justification text.';
-COMMENT ON COLUMN authorization.review_committee_approval IS
+COMMENT ON COLUMN "authorization".review_committee_approval IS
   'IT_RULES_2009_R22: approval by Review Committee. TODO(REVIEW-COMMITTEE-QUORUM).';
-COMMENT ON COLUMN authorization.statute_references IS
+COMMENT ON COLUMN "authorization".statute_references IS
   'Statute codes invoked, e.g., ["IT_ACT_S69","IT_RULES_2009_R3","BNSS_S94"].';
-COMMENT ON COLUMN authorization.signed_order_document_hash IS
+COMMENT ON COLUMN "authorization".signed_order_document_hash IS
   'BSA_S63: SHA-256 hash of the uploaded, e-signed order PDF. TODO(ESIGN-VERIFICATION).';
-COMMENT ON COLUMN authorization.dpdpa_exemption_ref IS
+COMMENT ON COLUMN "authorization".dpdpa_exemption_ref IS
   'DPDPA_S17: reference to the exemption notification invoked, if any.';
-COMMENT ON COLUMN authorization.revocation_log IS
+COMMENT ON COLUMN "authorization".revocation_log IS
   'Append-only JSONB array: [{actor, reason, timestamp}]. Never overwrite prior entries.';
 
 CREATE TRIGGER authorization_set_updated_at
-  BEFORE UPDATE ON authorization
+  BEFORE UPDATE ON "authorization"
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
-CREATE INDEX authorization_case_idx           ON authorization(case_id);
-CREATE INDEX authorization_subject_idx        ON authorization(subject_id);
-CREATE INDEX authorization_status_idx         ON authorization(status);
-CREATE INDEX authorization_active_expiry_idx  ON authorization(expires_on) WHERE status = 'ACTIVE';
+CREATE INDEX authorization_case_idx           ON "authorization"(case_id);
+CREATE INDEX authorization_subject_idx        ON "authorization"(subject_id);
+CREATE INDEX authorization_status_idx         ON "authorization"(status);
+CREATE INDEX authorization_active_expiry_idx  ON "authorization"(expires_on) WHERE status = 'ACTIVE';
