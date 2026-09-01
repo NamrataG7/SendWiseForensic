@@ -103,19 +103,21 @@ BEGIN
 END;
 $$;
 
--- 5. Convenience view for the admin console: officers with their primary role
+-- 5. Convenience view for the admin console: officers with their role names
 CREATE OR REPLACE VIEW officer_with_role AS
 SELECT
   o.id,
   o.full_name,
   o.email,
-  o.designation,
+  o.organization,
   o.home_jurisdiction,
+  o.jurisdiction,
+  o.active,
   o.created_at,
-  o.status,
-  ARRAY_AGG(orl.role_name) AS roles
+  ARRAY_REMOVE(ARRAY_AGG(r.name), NULL) AS roles
 FROM officer o
-LEFT JOIN officer_role orl ON orl.officer_id = o.id
+LEFT JOIN officer_role orl ON orl.officer_id = o.id AND orl.revoked_at IS NULL
+LEFT JOIN role r          ON r.id = orl.role_id
 GROUP BY o.id;
 
 COMMIT;

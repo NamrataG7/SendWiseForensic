@@ -35,25 +35,52 @@ export async function POST() {
     return Response.json({ error: 'invite_expired' }, { status: 410 });
   }
 
-  // Upsert the officer row with the auth user's UUID
-  const { error: officerErr } = await supabase.from('officer').upsert({
-    id: user.id,
-    full_name: invite.full_name,
-    email: invite.email,
-    designation: invite.designation,
-    home_jurisdiction: invite.home_jurisdiction,
-    status: 'ACTIVE',
-  });
-  if (officerErr) {
-    return Response.json({ error: 'officer_upsert_failed', detail: officerErr.message }, { status: 500 });
+  // Upsert officer row (bind auth_user_id to this Supabase auth user).
+  // Officer table columns per migration 01+09: full_name, email, organization,
+  // jurisdiction, home_jurisdiction, active, identity_verified, auth_user_id.
+  const { data: existingOfficer } = await supabase
+    .from('officer')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .maybeSingle();
+
+  let officerId = existingOfficer?.id as string | undefined;
+  if (!officerId) {
+    const { data: created, error: insertErr } = await supabase
+      .from('officer')
+      .insert({
+        auth_user_id: user.id,
+        full_name: invite.full_name,
+        email: invite.email,
+        organization: invite.designation ?? null,
+        jurisdiction: invite.home_jurisdiction,
+        home_jurisdiction: invite.home_jurisdiction,
+        active: true,
+      })
+      .select('id')
+      .single();
+    if (insertErr) {
+      return Response.json({ error: 'officer_insert_failed', detail: insertErr.message }, { status: 500 });
+    }
+    officerId = created.id;
   }
 
-  const { error: roleErr } = await supabase.from('officer_role').upsert({
-    officer_id: user.id,
-    role_name: invite.role_name,
+  // Look up role_id for the invited role_name
+  const { data: roleRow, error: roleLookupErr } = await supabase
+    .from('role')
+    .select('id')
+    .eq('name', invite.role_name)
+    .single();
+  if (roleLookupErr || !roleRow) {
+    return Response.json({ error: 'role_lookup_failed', detail: roleLookupErr?.message }, { status: 500 });
+  }
+
+  const { error: roleAssignErr } = await supabase.from('officer_role').insert({
+    officer_id: officerId,
+    role_id: roleRow.id,
   });
-  if (roleErr) {
-    return Response.json({ error: 'role_upsert_failed', detail: roleErr.message }, { status: 500 });
+  if (roleAssignErr && !/duplicate key/i.test(roleAssignErr.message)) {
+    return Response.json({ error: 'role_assign_failed', detail: roleAssignErr.message }, { status: 500 });
   }
 
   const { error: markErr } = await supabase
@@ -66,7 +93,7 @@ export async function POST() {
 
   // TODO(AUDIT-ATOMICITY): wrap officer + role + invite update + audit in a single plpgsql function.
   await supabase.rpc('p_append_audit', {
-    p_actor_id: user.id,
+    p_actor_id: officerId,
     p_actor_role: invite.role_name,
     p_action: 'OFFICER_ONBOARDED',
     p_target_type: 'officer_invitation',
