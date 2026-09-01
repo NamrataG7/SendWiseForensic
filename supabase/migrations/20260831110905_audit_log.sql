@@ -63,7 +63,7 @@ BEGIN
     NEW.timestamp::text
   );
 
-  NEW.hash := encode(digest(v_payload, 'sha256'), 'hex');
+  NEW.hash := encode(extensions.digest(v_payload, 'sha256'), 'hex');
   RETURN NEW;
 END;
 $$;
