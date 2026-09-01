@@ -25,18 +25,26 @@ const InviteSchema = z.object({
 });
 
 export async function POST(req: Request) {
-  // Verify caller is ADMIN
   const supabase = createClient(cookies());
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return Response.json({ error: 'unauthenticated' }, { status: 401 });
 
-  const { data: roles } = await supabase
+  // Look up officer by auth_user_id, then their roles.
+  const { data: me } = await supabase
+    .from('officer')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .single();
+  if (!me?.id) return Response.json({ error: 'forbidden' }, { status: 403 });
+
+  const { data: roleRows } = await supabase
     .from('officer_role')
-    .select('role_name')
-    .eq('officer_id', user.id);
-  const isAdmin = (roles ?? []).some((r) => r.role_name === 'ADMIN');
+    .select('role:role_id ( name )')
+    .eq('officer_id', me.id)
+    .is('revoked_at', null);
+  const isAdmin = (roleRows ?? []).some((r: any) => r.role?.name === 'ADMIN');
   if (!isAdmin) return Response.json({ error: 'forbidden' }, { status: 403 });
 
   let body: unknown;
@@ -51,7 +59,6 @@ export async function POST(req: Request) {
   }
   const { email, fullName, designation, role, homeJurisdiction } = parsed.data;
 
-  // Need service-role for admin.inviteUserByEmail
   const serviceKey = process.env.SUPABASE_SECRET_KEY;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (!serviceKey || !url) {
@@ -62,8 +69,6 @@ export async function POST(req: Request) {
   }
   const admin = createAdminClient(url, serviceKey);
 
-  // Invite via Supabase magic-link. redirectTo will land at /accept-invite where
-  // the officer sets their password.
   const redirectTo = new URL('/accept-invite', req.url).toString();
   const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
@@ -79,24 +84,22 @@ export async function POST(req: Request) {
 
   const inviteToken = invited?.user?.id ?? crypto.randomUUID();
 
-  // Record the invitation. Use RLS-scoped client (admin identity), not service-role.
   const { error: insertErr } = await supabase.from('officer_invitation').insert({
     email,
     full_name: fullName,
     designation: designation ?? null,
     role_name: role,
     home_jurisdiction: homeJurisdiction,
-    invited_by: user.id,
+    invited_by: me.id,
     invite_token: inviteToken,
   });
   if (insertErr) {
     return Response.json({ error: 'insert_failed', detail: insertErr.message }, { status: 500 });
   }
 
-  // Audit-log
   // TODO(AUDIT-ATOMICITY): wrap invite + audit + officer_invitation write in a single plpgsql function.
   await supabase.rpc('p_append_audit', {
-    p_actor_id: user.id,
+    p_actor_id: me.id,
     p_actor_role: 'ADMIN',
     p_action: 'OFFICER_INVITE',
     p_target_type: 'officer_invitation',

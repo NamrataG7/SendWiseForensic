@@ -13,16 +13,29 @@ export default async function AdminHomePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/admin/login');
 
-  const { data: roleRows } = await supabase
-    .from('officer_role')
-    .select('role_name')
-    .eq('officer_id', user.id);
-  const isAdmin = (roleRows ?? []).some((r) => r.role_name === 'ADMIN');
+  // Look up officer by auth_user_id, then their roles.
+  const { data: me } = await supabase
+    .from('officer')
+    .select('id')
+    .eq('auth_user_id', user.id)
+    .single();
+  const officerId = me?.id;
+  let isAdmin = false;
+  if (officerId) {
+    const { data: roleRows } = await supabase
+      .from('officer_role')
+      .select('role:role_id ( name )')
+      .eq('officer_id', officerId)
+      .is('revoked_at', null);
+    isAdmin = (roleRows ?? []).some(
+      (r: any) => r.role?.name === 'ADMIN',
+    );
+  }
   if (!isAdmin) redirect('/login');
 
   const { data: officers } = await supabase
     .from('officer_with_role')
-    .select('id, full_name, email, designation, home_jurisdiction, roles, status, created_at')
+    .select('id, full_name, email, organization, home_jurisdiction, jurisdiction, roles, active, created_at')
     .order('created_at', { ascending: false });
 
   const { data: pending } = await supabase
@@ -47,34 +60,30 @@ export default async function AdminHomePage() {
       </div>
 
       <section className="mb-12">
-        <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Active officers</h2>
+        <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Officers</h2>
         <div className="border border-slate-200 bg-white">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
               <tr>
                 <th className="py-3 px-4">Name</th>
                 <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4">Role</th>
-                <th className="py-3 px-4">Jurisdiction</th>
-                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Roles</th>
+                <th className="py-3 px-4">Home jurisdiction</th>
+                <th className="py-3 px-4">Active</th>
               </tr>
             </thead>
             <tbody>
-              {(officers ?? []).map((o) => (
+              {(officers ?? []).map((o: any) => (
                 <tr key={o.id} className="border-t border-slate-100">
                   <td className="py-3 px-4">{o.full_name}</td>
                   <td className="py-3 px-4 text-slate-600">{o.email}</td>
                   <td className="py-3 px-4 text-slate-600">
                     {(o.roles as string[] | null)?.filter(Boolean).join(', ') || '—'}
                   </td>
-                  <td className="py-3 px-4">{o.home_jurisdiction}</td>
+                  <td className="py-3 px-4">{o.home_jurisdiction ?? o.jurisdiction}</td>
                   <td className="py-3 px-4">
-                    <span className={
-                      o.status === 'ACTIVE'
-                        ? 'text-emerald-700'
-                        : 'text-slate-400'
-                    }>
-                      {o.status}
+                    <span className={o.active ? 'text-emerald-700' : 'text-slate-400'}>
+                      {o.active ? 'ACTIVE' : 'INACTIVE'}
                     </span>
                   </td>
                 </tr>
@@ -105,7 +114,7 @@ export default async function AdminHomePage() {
               </tr>
             </thead>
             <tbody>
-              {(pending ?? []).map((p) => (
+              {(pending ?? []).map((p: any) => (
                 <tr key={p.id} className="border-t border-slate-100">
                   <td className="py-3 px-4">{p.email}</td>
                   <td className="py-3 px-4">{p.full_name}</td>
