@@ -35,10 +35,13 @@ export async function middleware(req: NextRequest) {
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname === '/login' ||
+    pathname === '/admin/login' ||
+    pathname === '/accept-invite' ||
     pathname.startsWith('/auth/callback') ||
     pathname === '/counsel' ||
     pathname === '/prototype-notice' ||
-    pathname === '/api/counsel/objections';
+    pathname === '/api/counsel/objections' ||
+    pathname === '/api/officer/accept-invite';
 
   if (publicPath) {
     return NextResponse.next();
