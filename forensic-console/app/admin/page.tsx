@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
+import TopNav from '@/components/TopNav';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -45,7 +46,9 @@ export default async function AdminHomePage() {
     .order('created_at', { ascending: false });
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-10">
+    <>
+      <TopNav isAdmin />
+      <main className="mx-auto max-w-6xl px-4 py-10">
       <div className="flex items-center justify-between mb-8">
         <div>
           <p className="text-xs uppercase tracking-widest text-slate-500">SendWiseForensic — Administration</p>
@@ -141,5 +144,6 @@ export default async function AdminHomePage() {
         <code>docs/PROTOTYPE_NOTICE.md</code>.
       </p>
     </main>
+    </>
   );
 }
