@@ -12,6 +12,7 @@ export default function TopNav({ isAdmin }: { isAdmin?: boolean }) {
     ? [
         { href: '/admin', label: 'Officers' },
         { href: '/admin/officers/new', label: 'Invite Officer' },
+        { href: '/admin/counsel', label: 'Counsel Requests' },
       ]
     : [
         { href: '/cases', label: 'Cases' },
