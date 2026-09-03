@@ -21,9 +21,15 @@ const InviteSchema = z.object({
     'JUDICIAL_AUDITOR',
     'DPO',
   ]),
-  homeJurisdiction: z.enum(['IN', 'US', 'UK']),
 });
 
+/**
+ * Admin creates an invitation. Jurisdiction is server-derived from the admin's
+ * own home_jurisdiction — not client-picked. Row is inserted with
+ * status='PENDING_COAPPROVAL' and NO email is sent yet. A second admin in the
+ * same jurisdiction must approve via /api/admin/officers/coapprove to trigger
+ * the magic-link email.
+ */
 export async function POST(req: Request) {
   const supabase = createClient(cookies());
   const {
@@ -33,7 +39,7 @@ export async function POST(req: Request) {
 
   const { data: me } = await supabase
     .from('officer')
-    .select('id')
+    .select('id, home_jurisdiction')
     .eq('auth_user_id', user.id)
     .maybeSingle();
   if (!me?.id) return Response.json({ error: 'forbidden' }, { status: 403 });
@@ -56,7 +62,8 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return Response.json({ error: 'schema', issues: parsed.error.issues }, { status: 400 });
   }
-  const { email, fullName, designation, role, homeJurisdiction } = parsed.data;
+  const { email, fullName, designation, role } = parsed.data;
+  const jurisdiction = me.home_jurisdiction as 'IN' | 'US' | 'UK';
 
   const serviceKey = process.env.SUPABASE_SECRET_KEY;
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -68,68 +75,17 @@ export async function POST(req: Request) {
   }
   const admin = createAdminClient(url, serviceKey);
 
-  const redirectTo = new URL('/auth/callback?next=/accept-invite', req.url).toString();
-  let invited = await admin.auth.admin.inviteUserByEmail(email, {
-    redirectTo,
-    data: {
-      full_name: fullName,
-      role_name: role,
-      home_jurisdiction: homeJurisdiction,
-    },
-  });
+  const inviteToken = crypto.randomUUID();
 
-  // If the user already exists (from a prior invite that never completed, or a
-  // seed/bootstrap), Supabase returns HTTP 422 "email_exists" or similar. Fall
-  // back to generating a magic-link for the existing user so they can still
-  // reach /accept-invite and set a password.
-  if (invited.error) {
-    const msg = invited.error.message ?? '';
-    const isExisting =
-      /already registered|already exists|user_exists|email_exists|user with this email/i.test(msg) ||
-      (invited.error as any).status === 422;
-
-    if (isExisting) {
-      const linkRes = await admin.auth.admin.generateLink({
-        type: 'magiclink',
-        email,
-        options: { redirectTo },
-      });
-      if (linkRes.error) {
-        return Response.json(
-          {
-            error: 'invite_failed',
-            detail: `invite refused ("${msg}") and magic-link generation also failed: ${linkRes.error.message}`,
-            code: (linkRes.error as any).status ?? null,
-          },
-          { status: 500 },
-        );
-      }
-      invited = { data: linkRes.data as any, error: null } as any;
-    } else {
-      return Response.json(
-        {
-          error: 'invite_failed',
-          detail: msg,
-          code: (invited.error as any).status ?? null,
-        },
-        { status: 500 },
-      );
-    }
-  }
-
-  const inviteToken = (invited.data as any)?.user?.id ?? crypto.randomUUID();
-
-  // Use service-role client for the officer_invitation insert to bypass
-  // RLS reliably. This is safe because we have just verified the caller
-  // is ADMIN above.
   const { error: insertErr } = await admin.from('officer_invitation').insert({
     email,
     full_name: fullName,
     designation: designation ?? null,
     role_name: role,
-    home_jurisdiction: homeJurisdiction,
+    home_jurisdiction: jurisdiction,
     invited_by: me.id,
     invite_token: inviteToken,
+    status: 'PENDING_COAPPROVAL',
   });
   if (insertErr) {
     return Response.json(
@@ -138,19 +94,18 @@ export async function POST(req: Request) {
     );
   }
 
-  // TODO(AUDIT-ATOMICITY): wrap invite + audit + officer_invitation write in a single plpgsql function.
   try {
     await admin.rpc('p_append_audit', {
       p_actor_id: me.id,
       p_actor_role: 'ADMIN',
-      p_action: 'OFFICER_INVITE',
+      p_action: 'OFFICER_INVITE_REQUESTED',
       p_target_type: 'officer_invitation',
       p_target_id: inviteToken,
-      p_context: { email, role, home_jurisdiction: homeJurisdiction },
+      p_context: { email, role, jurisdiction, status: 'PENDING_COAPPROVAL' },
     });
   } catch {
-    // audit is best-effort in prototype
+    /* best-effort audit */
   }
 
-  return Response.json({ ok: true, email }, { status: 201 });
+  return Response.json({ ok: true, email, status: 'PENDING_COAPPROVAL' }, { status: 201 });
 }
