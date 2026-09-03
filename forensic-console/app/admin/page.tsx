@@ -92,26 +92,43 @@ export default async function AdminHomePage() {
                   <th className="py-3 px-4">Email</th>
                   <th className="py-3 px-4">Roles</th>
                   <th className="py-3 px-4">Active</th>
+                  <th className="py-3 px-4">Action</th>
                 </tr>
               </thead>
               <tbody>
-                {(officers ?? []).map((o: any) => (
-                  <tr key={o.id} className="border-t border-slate-100">
-                    <td className="py-3 px-4">{o.full_name}</td>
-                    <td className="py-3 px-4 text-slate-600">{o.email}</td>
-                    <td className="py-3 px-4 text-slate-600">
-                      {(o.roles as string[] | null)?.filter(Boolean).join(', ') || '—'}
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className={o.active ? 'text-emerald-700' : 'text-slate-400'}>
-                        {o.active ? 'ACTIVE' : 'INACTIVE'}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {(officers ?? []).map((o: any) => {
+                  const isSelf = o.id === officerId;
+                  return (
+                    <tr key={o.id} className="border-t border-slate-100">
+                      <td className="py-3 px-4">{o.full_name}</td>
+                      <td className="py-3 px-4 text-slate-600">{o.email}</td>
+                      <td className="py-3 px-4 text-slate-600">
+                        {(o.roles as string[] | null)?.filter(Boolean).join(', ') || '—'}
+                      </td>
+                      <td className="py-3 px-4">
+                        <span className={o.active ? 'text-emerald-700' : 'text-slate-400'}>
+                          {o.active ? 'ACTIVE' : 'INACTIVE'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4">
+                        {isSelf ? (
+                          <span className="text-slate-400 text-xs uppercase">(you)</span>
+                        ) : (
+                          <form action="/api/admin/officers/delete" method="post"
+                            onSubmit={(e) => { if (!confirm('Delete this officer? This removes their auth user too.')) e.preventDefault(); }}>
+                            <input type="hidden" name="officer_id" value={o.id} />
+                            <button className="text-xs uppercase tracking-widest text-red-700 border border-red-300 hover:bg-red-50 px-3 py-1">
+                              Delete
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
                 {(!officers || officers.length === 0) && (
                   <tr>
-                    <td className="py-6 px-4 text-center text-slate-500" colSpan={4}>
+                    <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
                       No officers yet in {myJurisdiction}. Invite one to get started.
                     </td>
                   </tr>
@@ -147,16 +164,25 @@ export default async function AdminHomePage() {
                       <td className="py-3 px-4 text-slate-600">{p.role_name}</td>
                       <td className="py-3 px-4 text-slate-500 text-xs">{isMine ? '(you)' : p.invited_by}</td>
                       <td className="py-3 px-4">
-                        {isMine ? (
-                          <span className="text-slate-400 text-xs uppercase">Awaiting other admin</span>
-                        ) : (
-                          <form action="/api/admin/officers/coapprove" method="post">
+                        <div className="flex gap-2">
+                          {isMine ? (
+                            <span className="text-slate-400 text-xs uppercase self-center">Awaiting other admin</span>
+                          ) : (
+                            <form action="/api/admin/officers/coapprove" method="post">
+                              <input type="hidden" name="invitation_id" value={p.id} />
+                              <button className="text-xs uppercase tracking-widest bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1">
+                                Approve
+                              </button>
+                            </form>
+                          )}
+                          <form action="/api/admin/officers/invite-delete" method="post"
+                            onSubmit={(e) => { if (!confirm('Delete this pending invitation?')) e.preventDefault(); }}>
                             <input type="hidden" name="invitation_id" value={p.id} />
-                            <button className="text-xs uppercase tracking-widest bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1">
-                              Approve
+                            <button className="text-xs uppercase tracking-widest text-red-700 border border-red-300 hover:bg-red-50 px-3 py-1">
+                              Delete
                             </button>
                           </form>
-                        )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -183,6 +209,7 @@ export default async function AdminHomePage() {
                   <th className="py-3 px-4">Name</th>
                   <th className="py-3 px-4">Role</th>
                   <th className="py-3 px-4">Expires</th>
+                  <th className="py-3 px-4">Action</th>
                 </tr>
               </thead>
               <tbody>
@@ -192,11 +219,20 @@ export default async function AdminHomePage() {
                     <td className="py-3 px-4">{p.full_name}</td>
                     <td className="py-3 px-4 text-slate-600">{p.role_name}</td>
                     <td className="py-3 px-4 text-slate-500 text-xs">{new Date(p.expires_at).toLocaleString()}</td>
+                    <td className="py-3 px-4">
+                      <form action="/api/admin/officers/invite-delete" method="post"
+                        onSubmit={(e) => { if (!confirm('Delete this pending invitation?')) e.preventDefault(); }}>
+                        <input type="hidden" name="invitation_id" value={p.id} />
+                        <button className="text-xs uppercase tracking-widest text-red-700 border border-red-300 hover:bg-red-50 px-3 py-1">
+                          Delete
+                        </button>
+                      </form>
+                    </td>
                   </tr>
                 ))}
                 {(!pendingSend || pendingSend.length === 0) && (
                   <tr>
-                    <td className="py-6 px-4 text-center text-slate-500" colSpan={4}>
+                    <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
                       No pending sent invitations.
                     </td>
                   </tr>
