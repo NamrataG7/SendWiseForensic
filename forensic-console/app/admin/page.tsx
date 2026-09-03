@@ -14,25 +14,34 @@ export default async function AdminHomePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/admin/login');
 
-  // Look up officer by auth_user_id, then their roles.
-  const { data: me } = await supabase
+  // Look up officer by auth_user_id, then their roles. Use maybeSingle so a
+  // missing officer row does not throw; instead we surface the reason.
+  const { data: me, error: meErr } = await supabase
     .from('officer')
     .select('id')
     .eq('auth_user_id', user.id)
-    .single();
+    .maybeSingle();
   const officerId = me?.id;
   let isAdmin = false;
+  let denialReason: string | null = null;
+  if (meErr) denialReason = `officer_lookup_error:${meErr.message}`;
+  if (!officerId) denialReason = denialReason ?? 'no_officer_row_for_auth_user';
   if (officerId) {
-    const { data: roleRows } = await supabase
+    const { data: roleRows, error: roleErr } = await supabase
       .from('officer_role')
       .select('role:role_id ( name )')
       .eq('officer_id', officerId)
       .is('revoked_at', null);
+    if (roleErr) denialReason = `role_lookup_error:${roleErr.message}`;
     isAdmin = (roleRows ?? []).some(
       (r: any) => r.role?.name === 'ADMIN',
     );
+    if (!isAdmin && !denialReason) denialReason = 'not_admin';
   }
-  if (!isAdmin) redirect('/login');
+  if (!isAdmin) {
+    // Send back to /admin/login with the reason so the user can see why.
+    redirect(`/admin/login?denied=${encodeURIComponent(denialReason ?? 'unknown')}`);
+  }
 
   const { data: officers } = await supabase
     .from('officer_with_role')
