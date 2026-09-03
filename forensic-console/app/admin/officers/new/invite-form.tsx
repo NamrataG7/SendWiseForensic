@@ -45,7 +45,9 @@ export default function InviteOfficerForm() {
       });
       const body = await res.json();
       if (!res.ok) {
-        setError(body?.error || 'Invitation failed.');
+        const detail = body?.detail ? ` — ${body.detail}` : '';
+        const code = body?.code ? ` [${body.code}]` : '';
+        setError(`${body?.error || 'Invitation failed.'}${detail}${code}`);
         setLoading(false);
         return;
       }
