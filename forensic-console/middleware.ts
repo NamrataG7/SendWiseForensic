@@ -32,6 +32,7 @@ export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   const publicPath =
+    pathname === '/' ||
     pathname.startsWith('/_next') ||
     pathname.startsWith('/favicon') ||
     pathname === '/login' ||
