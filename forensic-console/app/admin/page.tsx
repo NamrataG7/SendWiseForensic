@@ -14,11 +14,9 @@ export default async function AdminHomePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect('/admin/login');
 
-  // Look up officer by auth_user_id, then their roles. Use maybeSingle so a
-  // missing officer row does not throw; instead we surface the reason.
   const { data: me, error: meErr } = await supabase
     .from('officer')
-    .select('id')
+    .select('id, home_jurisdiction, full_name, email')
     .eq('auth_user_id', user.id)
     .maybeSingle();
   const officerId = me?.id;
@@ -27,132 +25,191 @@ export default async function AdminHomePage() {
   if (meErr) denialReason = `officer_lookup_error:${meErr.message}`;
   if (!officerId) denialReason = denialReason ?? 'no_officer_row_for_auth_user';
   if (officerId) {
-    const { data: roleRows, error: roleErr } = await supabase
+    const { data: roleRows } = await supabase
       .from('officer_role')
       .select('role:role_id ( name )')
       .eq('officer_id', officerId)
       .is('revoked_at', null);
-    if (roleErr) denialReason = `role_lookup_error:${roleErr.message}`;
-    isAdmin = (roleRows ?? []).some(
-      (r: any) => r.role?.name === 'ADMIN',
-    );
+    isAdmin = (roleRows ?? []).some((r: any) => r.role?.name === 'ADMIN');
     if (!isAdmin && !denialReason) denialReason = 'not_admin';
   }
   if (!isAdmin) {
-    // Send back to /admin/login with the reason so the user can see why.
     redirect(`/admin/login?denied=${encodeURIComponent(denialReason ?? 'unknown')}`);
   }
+
+  const myJurisdiction = me!.home_jurisdiction as 'IN' | 'US' | 'UK';
 
   const { data: officers } = await supabase
     .from('officer_with_role')
     .select('id, full_name, email, organization, home_jurisdiction, jurisdiction, roles, active, created_at')
+    .eq('home_jurisdiction', myJurisdiction)
     .order('created_at', { ascending: false });
 
-  const { data: pending } = await supabase
+  const { data: pendingCoapproval } = await supabase
     .from('officer_invitation')
-    .select('id, email, full_name, role_name, home_jurisdiction, created_at, expires_at, used_at')
+    .select('id, email, full_name, role_name, home_jurisdiction, invited_by, created_at, expires_at, status')
+    .eq('status', 'PENDING_COAPPROVAL')
+    .eq('home_jurisdiction', myJurisdiction)
+    .order('created_at', { ascending: false });
+
+  const { data: pendingSend } = await supabase
+    .from('officer_invitation')
+    .select('id, email, full_name, role_name, home_jurisdiction, coapproved_by, coapproved_at, expires_at, status')
+    .in('status', ['APPROVED', 'SENT'])
     .is('used_at', null)
+    .eq('home_jurisdiction', myJurisdiction)
     .order('created_at', { ascending: false });
 
   return (
     <>
       <TopNav isAdmin />
       <main className="mx-auto max-w-6xl px-4 py-10">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <p className="text-xs uppercase tracking-widest text-slate-500">SendWiseForensic — Administration</p>
-          <h1 className="font-serif text-3xl text-slate-900">Officer Management</h1>
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-slate-500">
+              SendWiseForensic — Administration — Jurisdiction: {myJurisdiction}
+            </p>
+            <h1 className="font-serif text-3xl text-slate-900">Officer Management</h1>
+            <p className="text-xs text-slate-500 mt-1">
+              You can only see and invite officers for {myJurisdiction}. Officer invitations require a second admin (dual-control).
+            </p>
+          </div>
+          <Link
+            href="/admin/officers/new"
+            className="bg-indigo-800 hover:bg-indigo-900 text-white uppercase tracking-widest text-xs font-semibold px-5 py-3"
+          >
+            Invite Officer
+          </Link>
         </div>
-        <Link
-          href="/admin/officers/new"
-          className="bg-indigo-800 hover:bg-indigo-900 text-white uppercase tracking-widest text-xs font-semibold px-5 py-3"
-        >
-          Invite Officer
-        </Link>
-      </div>
 
-      <section className="mb-12">
-        <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Officers</h2>
-        <div className="border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="py-3 px-4">Name</th>
-                <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4">Roles</th>
-                <th className="py-3 px-4">Home jurisdiction</th>
-                <th className="py-3 px-4">Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(officers ?? []).map((o: any) => (
-                <tr key={o.id} className="border-t border-slate-100">
-                  <td className="py-3 px-4">{o.full_name}</td>
-                  <td className="py-3 px-4 text-slate-600">{o.email}</td>
-                  <td className="py-3 px-4 text-slate-600">
-                    {(o.roles as string[] | null)?.filter(Boolean).join(', ') || '—'}
-                  </td>
-                  <td className="py-3 px-4">{o.home_jurisdiction ?? o.jurisdiction}</td>
-                  <td className="py-3 px-4">
-                    <span className={o.active ? 'text-emerald-700' : 'text-slate-400'}>
-                      {o.active ? 'ACTIVE' : 'INACTIVE'}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-              {(!officers || officers.length === 0) && (
+        <section className="mb-12">
+          <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Officers ({myJurisdiction})</h2>
+          <div className="border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
-                    No officers yet. Invite one to get started.
-                  </td>
+                  <th className="py-3 px-4">Name</th>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Roles</th>
+                  <th className="py-3 px-4">Active</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {(officers ?? []).map((o: any) => (
+                  <tr key={o.id} className="border-t border-slate-100">
+                    <td className="py-3 px-4">{o.full_name}</td>
+                    <td className="py-3 px-4 text-slate-600">{o.email}</td>
+                    <td className="py-3 px-4 text-slate-600">
+                      {(o.roles as string[] | null)?.filter(Boolean).join(', ') || '—'}
+                    </td>
+                    <td className="py-3 px-4">
+                      <span className={o.active ? 'text-emerald-700' : 'text-slate-400'}>
+                        {o.active ? 'ACTIVE' : 'INACTIVE'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {(!officers || officers.length === 0) && (
+                  <tr>
+                    <td className="py-6 px-4 text-center text-slate-500" colSpan={4}>
+                      No officers yet in {myJurisdiction}. Invite one to get started.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-      <section>
-        <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Pending invitations</h2>
-        <div className="border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4">Name</th>
-                <th className="py-3 px-4">Role</th>
-                <th className="py-3 px-4">Jurisdiction</th>
-                <th className="py-3 px-4">Expires</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(pending ?? []).map((p: any) => (
-                <tr key={p.id} className="border-t border-slate-100">
-                  <td className="py-3 px-4">{p.email}</td>
-                  <td className="py-3 px-4">{p.full_name}</td>
-                  <td className="py-3 px-4 text-slate-600">{p.role_name}</td>
-                  <td className="py-3 px-4">{p.home_jurisdiction}</td>
-                  <td className="py-3 px-4 text-slate-500 text-xs">{new Date(p.expires_at).toLocaleString()}</td>
-                </tr>
-              ))}
-              {(!pending || pending.length === 0) && (
+        <section className="mb-12">
+          <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Awaiting your co-approval</h2>
+          <p className="text-xs text-slate-500 mb-2">
+            These invitations were created by another admin. Approving them sends the magic-link email. You cannot approve invitations you created (dual-control).
+          </p>
+          <div className="border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
                 <tr>
-                  <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
-                    No pending invitations.
-                  </td>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Name</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Created by</th>
+                  <th className="py-3 px-4">Action</th>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+              </thead>
+              <tbody>
+                {(pendingCoapproval ?? []).map((p: any) => {
+                  const isMine = p.invited_by === officerId;
+                  return (
+                    <tr key={p.id} className="border-t border-slate-100">
+                      <td className="py-3 px-4">{p.email}</td>
+                      <td className="py-3 px-4">{p.full_name}</td>
+                      <td className="py-3 px-4 text-slate-600">{p.role_name}</td>
+                      <td className="py-3 px-4 text-slate-500 text-xs">{isMine ? '(you)' : p.invited_by}</td>
+                      <td className="py-3 px-4">
+                        {isMine ? (
+                          <span className="text-slate-400 text-xs uppercase">Awaiting other admin</span>
+                        ) : (
+                          <form action="/api/admin/officers/coapprove" method="post">
+                            <input type="hidden" name="invitation_id" value={p.id} />
+                            <button className="text-xs uppercase tracking-widest bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1">
+                              Approve
+                            </button>
+                          </form>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {(!pendingCoapproval || pendingCoapproval.length === 0) && (
+                  <tr>
+                    <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
+                      No invitations awaiting co-approval.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
 
-      <p className="mt-10 text-xs text-slate-500">
-        Admin action logging is scoped to <code>audit_log</code> with role <code>ADMIN</code>.
-        Admins cannot access cases or evidence. See <code>docs/ADMIN_BOOTSTRAP.md</code> and
-        <code>docs/PROTOTYPE_NOTICE.md</code>.
-      </p>
-    </main>
+        <section>
+          <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Sent invitations (pending sign-in)</h2>
+          <div className="border border-slate-200 bg-white">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="py-3 px-4">Email</th>
+                  <th className="py-3 px-4">Name</th>
+                  <th className="py-3 px-4">Role</th>
+                  <th className="py-3 px-4">Expires</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pendingSend ?? []).map((p: any) => (
+                  <tr key={p.id} className="border-t border-slate-100">
+                    <td className="py-3 px-4">{p.email}</td>
+                    <td className="py-3 px-4">{p.full_name}</td>
+                    <td className="py-3 px-4 text-slate-600">{p.role_name}</td>
+                    <td className="py-3 px-4 text-slate-500 text-xs">{new Date(p.expires_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+                {(!pendingSend || pendingSend.length === 0) && (
+                  <tr>
+                    <td className="py-6 px-4 text-center text-slate-500" colSpan={4}>
+                      No pending sent invitations.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <p className="mt-10 text-xs text-slate-500">
+          Admin actions logged to <code>audit_log</code>. Admin sees only {myJurisdiction}. Cross-jurisdiction access requires a super-admin flag (not enabled). See <code>docs/ADMIN_BOOTSTRAP.md</code>.
+        </p>
+      </main>
     </>
   );
 }
