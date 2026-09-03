@@ -56,7 +56,7 @@ The following components are intentionally stubbed for the prototype and MUST be
 - Prototype exposes a scoped read-only page behind a shared magic-link token.
 - Replacement task tracked as `TODO(COUNSEL-PORTAL)`.
 
-## What is **not** stubbed
+## What is **not** stubbed (built and working in the prototype)
 
 - Warrant-gated writes (enforced at DB + API layer).
 - Scope-based query rewriting.
@@ -65,5 +65,9 @@ The following components are intentionally stubbed for the prototype and MUST be
 - Privilege quarantine routing (rule + contact-list based).
 - BSA §63 certificate generation.
 - Role separation and RBAC.
+- **Admin console + dual-control officer invitation flow (2-admin co-approval, jurisdiction-scoped).**
+- **Counsel portal — magic-link request → admin approve → scoped case-metadata view + objection filing.**
+- **Warrant extension request flow (per-jurisdiction cap enforcement pending).**
+- **Review Committee approval / rejection of authorizations (IT Rules 2009 R.22 realised in prototype form).**
 
 These form the architectural core; the stubs above are the pieces that require external integrations, government partnerships, or hardware.
