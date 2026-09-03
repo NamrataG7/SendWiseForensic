@@ -1,11 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
 
 export default function AdminLoginForm() {
-  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -26,8 +24,10 @@ export default function AdminLoginForm() {
         setLoading(false);
         return;
       }
-      router.push('/admin');
-      router.refresh();
+      // Hard navigation so browser cookies committed by supabase-js are
+      // sent with the /admin request. Client router.push races the cookie
+      // write on some browsers and lands on middleware without the session.
+      window.location.assign('/admin');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sign-in failed.');
       setLoading(false);
