@@ -37,28 +37,43 @@ export default async function AdminHomePage() {
     redirect(`/admin/login?denied=${encodeURIComponent(denialReason ?? 'unknown')}`);
   }
 
-  const myJurisdiction = me!.home_jurisdiction as 'IN' | 'US' | 'UK';
+  const myJurisdiction = (me!.home_jurisdiction ?? 'IN') as 'IN' | 'US' | 'UK';
 
-  const { data: officers } = await supabase
+  const officersQ = await supabase
     .from('officer_with_role')
     .select('id, full_name, email, organization, home_jurisdiction, jurisdiction, roles, active, created_at')
     .eq('home_jurisdiction', myJurisdiction)
     .order('created_at', { ascending: false });
+  const officers = officersQ.data ?? [];
+  const officersErr = officersQ.error?.message ?? null;
 
-  const { data: pendingCoapproval } = await supabase
-    .from('officer_invitation')
-    .select('id, email, full_name, role_name, home_jurisdiction, invited_by, created_at, expires_at, status')
-    .eq('status', 'PENDING_COAPPROVAL')
-    .eq('home_jurisdiction', myJurisdiction)
-    .order('created_at', { ascending: false });
+  // Wrap invitation queries in try/catch because they depend on migration
+  // 20260902000200 which may not be applied yet.
+  let pendingCoapproval: any[] = [];
+  let pendingSend: any[] = [];
+  let invitationsErr: string | null = null;
+  try {
+    const coQ = await supabase
+      .from('officer_invitation')
+      .select('id, email, full_name, role_name, home_jurisdiction, invited_by, created_at, expires_at, status')
+      .eq('status', 'PENDING_COAPPROVAL')
+      .eq('home_jurisdiction', myJurisdiction)
+      .order('created_at', { ascending: false });
+    if (coQ.error) throw coQ.error;
+    pendingCoapproval = coQ.data ?? [];
 
-  const { data: pendingSend } = await supabase
-    .from('officer_invitation')
-    .select('id, email, full_name, role_name, home_jurisdiction, coapproved_by, coapproved_at, expires_at, status')
-    .in('status', ['APPROVED', 'SENT'])
-    .is('used_at', null)
-    .eq('home_jurisdiction', myJurisdiction)
-    .order('created_at', { ascending: false });
+    const sQ = await supabase
+      .from('officer_invitation')
+      .select('id, email, full_name, role_name, home_jurisdiction, coapproved_by, coapproved_at, expires_at, status')
+      .in('status', ['APPROVED', 'SENT'])
+      .is('used_at', null)
+      .eq('home_jurisdiction', myJurisdiction)
+      .order('created_at', { ascending: false });
+    if (sQ.error) throw sQ.error;
+    pendingSend = sQ.data ?? [];
+  } catch (e: any) {
+    invitationsErr = e?.message ?? 'invitation_query_failed';
+  }
 
   return (
     <>
@@ -81,6 +96,23 @@ export default async function AdminHomePage() {
             Invite Officer
           </Link>
         </div>
+
+        {(officersErr || invitationsErr) && (
+          <div className="mb-6 border border-amber-300 bg-amber-50 text-amber-900 text-sm p-3">
+            <div className="font-semibold uppercase text-xs tracking-widest mb-1">Migration pending</div>
+            {invitationsErr && (
+              <div>
+                Invitation query failed: <code className="text-xs">{invitationsErr}</code>.
+                Run <code>supabase/migrations/20260902000200_scoped_admin_and_coapproval.sql</code> in Supabase SQL Editor.
+              </div>
+            )}
+            {officersErr && (
+              <div className="mt-1">
+                Officer query failed: <code className="text-xs">{officersErr}</code>.
+              </div>
+            )}
+          </div>
+        )}
 
         <section className="mb-12">
           <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">Officers ({myJurisdiction})</h2>
