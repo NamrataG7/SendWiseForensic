@@ -69,7 +69,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient(url, serviceKey);
 
   const redirectTo = new URL('/auth/callback?next=/accept-invite', req.url).toString();
-  const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
+  let invited = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
     data: {
       full_name: fullName,
@@ -77,11 +77,47 @@ export async function POST(req: Request) {
       home_jurisdiction: homeJurisdiction,
     },
   });
-  if (inviteErr) {
-    return Response.json({ error: 'invite_failed', detail: inviteErr.message }, { status: 500 });
+
+  // If the user already exists (from a prior invite that never completed, or a
+  // seed/bootstrap), Supabase returns HTTP 422 "email_exists" or similar. Fall
+  // back to generating a magic-link for the existing user so they can still
+  // reach /accept-invite and set a password.
+  if (invited.error) {
+    const msg = invited.error.message ?? '';
+    const isExisting =
+      /already registered|already exists|user_exists|email_exists|user with this email/i.test(msg) ||
+      (invited.error as any).status === 422;
+
+    if (isExisting) {
+      const linkRes = await admin.auth.admin.generateLink({
+        type: 'magiclink',
+        email,
+        options: { redirectTo },
+      });
+      if (linkRes.error) {
+        return Response.json(
+          {
+            error: 'invite_failed',
+            detail: `invite refused ("${msg}") and magic-link generation also failed: ${linkRes.error.message}`,
+            code: (linkRes.error as any).status ?? null,
+          },
+          { status: 500 },
+        );
+      }
+      invited = { data: linkRes.data as any, error: null } as any;
+    } else {
+      return Response.json(
+        {
+          error: 'invite_failed',
+          detail: msg,
+          code: (invited.error as any).status ?? null,
+        },
+        { status: 500 },
+      );
+    }
   }
 
-  const inviteToken = invited?.user?.id ?? crypto.randomUUID();
+  const inviteToken = (invited.data as any)?.user?.id ?? crypto.randomUUID();
 
   // Use service-role client for the officer_invitation insert to bypass
   // RLS reliably. This is safe because we have just verified the caller
