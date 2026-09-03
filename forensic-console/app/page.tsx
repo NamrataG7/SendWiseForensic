@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
+import LogoutButton from '@/components/LogoutButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -10,7 +10,8 @@ export default async function LandingPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  // If already signed in, jump to the appropriate console.
+
+  let continueHref: string | null = null;
   if (user) {
     const { data: me } = await supabase
       .from('officer')
@@ -24,9 +25,10 @@ export default async function LandingPage() {
         .eq('officer_id', me.id)
         .is('revoked_at', null);
       const isAdmin = (roleRows ?? []).some((r: any) => r.role?.name === 'ADMIN');
-      redirect(isAdmin ? '/admin' : '/cases');
+      continueHref = isAdmin ? '/admin' : '/cases';
+    } else {
+      continueHref = '/cases';
     }
-    redirect('/cases');
   }
 
   return (
@@ -36,6 +38,16 @@ export default async function LandingPage() {
       <p className="text-sm text-slate-600 mb-10 max-w-xl">
         A warrant-first platform for lawful digital supervision under India IT Act §69 / 2009 Rules, US Title III, and UK Investigatory Powers Act 2016. Sign in below with the appropriate role.
       </p>
+
+      {user && continueHref && (
+        <div className="mb-8 border border-emerald-200 bg-emerald-50 text-emerald-900 text-sm p-4 flex items-center justify-between">
+          <div>
+            Signed in as <code className="text-xs">{user.email}</code>.{' '}
+            <Link href={continueHref} className="font-semibold underline">Continue to your console →</Link>
+          </div>
+          <LogoutButton />
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-3">
         <Link href="/login" className="block border border-slate-200 bg-white p-6 hover:border-indigo-700 transition-colors">
