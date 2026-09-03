@@ -68,7 +68,7 @@ export async function POST(req: Request) {
   }
   const admin = createAdminClient(url, serviceKey);
 
-  const redirectTo = new URL('/accept-invite', req.url).toString();
+  const redirectTo = new URL('/auth/callback?next=/accept-invite', req.url).toString();
   const { data: invited, error: inviteErr } = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo,
     data: {
