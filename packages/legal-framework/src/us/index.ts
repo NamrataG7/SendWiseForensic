@@ -163,6 +163,25 @@ export class UsLegalFramework implements LegalFrameworkAdapter {
   }
 
   /**
+   * §2518 has no absolute cumulative cap; each renewal is a new judicial
+   * decision. Return null to signal "no statutory cumulative cap"; the
+   * requesting officer must still make the §2518(1) probable-cause
+   * showing at every renewal, but that is enforced at issuance, not by
+   * cumulative-days arithmetic.
+   */
+  computeCumulativeCapRemaining(
+    _parentAuth: Authorization,
+    _priorApprovedExtensionDurationsDays: number[],
+  ): import('../adapter').CumulativeCapAssessment {
+    return {
+      remainingDays: null,
+      consumedDays: 0,
+      statuteReferences: [STATUTES.US_18USC_2518_5.code],
+      note: '§2518 imposes no absolute cumulative cap; each renewal is a new judicial decision requiring §2518(1) showing.',
+    };
+  }
+
+  /**
    * §2518(5): no order longer than thirty days; extensions in thirty-day
    * increments on a new showing. No absolute statutory cap (unlike
    * India's 180-day cumulative cap under IT Rules 2009 R.11).

@@ -63,6 +63,39 @@ export class IndiaLegalFramework implements LegalFrameworkAdapter {
   }
 
   /**
+   * IT Rules 2009 R.11: cumulative-cap enforcement across a parent §69
+   * warrant and its approved extensions. Called at extension-request and
+   * extension-approval time by /api/authorizations/extensions and by the
+   * DB trigger authorization_extension_within_cap.
+   */
+  computeCumulativeCapRemaining(
+    parentAuth: Authorization,
+    priorApprovedExtensionDurationsDays: number[],
+  ): import('../adapter').CumulativeCapAssessment {
+    if (parentAuth.type !== AuthorizationType.JUDICIAL_WARRANT) {
+      return {
+        remainingDays: null,
+        consumedDays: 0,
+        statuteReferences: [],
+        note: 'IT Rules 2009 R.11 cumulative-cap applies to §69 JUDICIAL_WARRANT only.',
+      };
+    }
+    const totalCap = 180;
+    const parentDays =
+      (new Date(parentAuth.expiresOn).getTime() - new Date(parentAuth.issuedOn).getTime()) /
+      (24 * 3600 * 1000);
+    const consumed =
+      Math.max(0, Math.round(parentDays)) +
+      priorApprovedExtensionDurationsDays.reduce((a, b) => a + Math.max(0, b), 0);
+    return {
+      remainingDays: totalCap - consumed,
+      consumedDays: consumed,
+      statuteReferences: [STATUTES.IT_ACT_S69.code, STATUTES.IT_RULES_2009_R11.code],
+      note: `IT Rules 2009 R.11: 180-day cumulative cap. Consumed ${consumed} of 180 days.`,
+    };
+  }
+
+  /**
    * IT Rules 2009 R.11: 60 days per order, 180 days total cap for §69.
    * BAIL / PROBATION / PLEA: duration lives in the court order text —
    * we return null to signal "defer to external order document".
