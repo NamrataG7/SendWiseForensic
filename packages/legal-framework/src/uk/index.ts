@@ -274,6 +274,25 @@ export class UkLegalFramework implements LegalFrameworkAdapter {
   }
 
   /**
+   * IPA 2016 imposes no absolute cumulative cap on renewals; each renewal
+   * is approved on necessity + proportionality grounds by the Secretary
+   * of State and (double-lock) a Judicial Commissioner. Return null.
+   * IPC oversight (s.229) audits handling arrangements as an ex-post
+   * proportionality check.
+   */
+  computeCumulativeCapRemaining(
+    _parentAuth: Authorization,
+    _priorApprovedExtensionDurationsDays: number[],
+  ): import('../adapter').CumulativeCapAssessment {
+    return {
+      remainingDays: null,
+      consumedDays: 0,
+      statuteReferences: ['UK_IPA_2016_S32', 'UK_IPA_2016_S229'],
+      note: 'IPA 2016 imposes no absolute cap on renewals; each renewal requires necessity + proportionality re-showing under double-lock.',
+    };
+  }
+
+  /**
    * IPA 2016 s.32 (targeted interception) and s.108 (EI): 6 months per
    * warrant, renewable in 6-month increments. IPA 2016 s.29 urgent
    * warrants: 5 working days, with Judicial Commissioner approval
