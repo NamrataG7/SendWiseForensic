@@ -9,97 +9,142 @@
 
 ## What this is
 
-SendWise is a privacy-preserving parental-awareness tool: message content never leaves the child's device; only anonymised metadata is sent to a dashboard.
+SendWise is a privacy-preserving on-device supervision tool: message content never leaves the device; only anonymised metadata is sent to a dashboard.
 
-**SendWiseForensic inverts that privacy model — but only when a valid judicial authorization scopes the inversion.** Without a valid, unexpired, in-scope authorization, the system behaves exactly like SendWise: no content leaves the device.
+**SendWiseForensic inverts that privacy model — but only when a valid judicial authorization scopes the inversion.** Without a valid, unexpired, in-scope authorization, the system behaves exactly like SendWise: content stays on the device.
 
-The primary user is **not the police**. The primary user is **the court-authorized case**. Police are executors of court orders through this platform, not originators of surveillance.
+The primary user is **not the police**. The primary user is **the court-authorized case**. Police act as executors of court orders through this platform, not originators of surveillance.
 
-## Design principles
+---
 
-1. **Warrant-first, monitoring-second.** No collection without a valid authorization object attached to the subject.
-2. **Illegal surveillance must be architecturally impossible**, not merely prohibited by policy.
-3. **Scope is enforced at the database layer**, not just the UI.
-4. **Everything is audit-logged** to a hash-chained, tamper-evident log.
-5. **Privileged communications are auto-quarantined** (lawyer, doctor, clergy, spouse) and reviewed by an independent filter team, never by case investigators.
-6. **Subject has rights** — via defense counsel, they can see the warrant scope, duration, and categories collected, and file objections.
-7. **Auto-expiry is enforced by cron**, not by policy.
+## Methodology
+
+The platform is built on four disciplines applied together. Understanding them is the fastest way to understand the codebase.
+
+### 1. Trunk-based, adapter-driven architecture
+
+Single long-lived branch (`main`). Jurisdiction-specific behaviour lives in **pluggable adapters** under `packages/legal-framework/src/{india,us,uk}/`, each implementing a common `LegalFrameworkAdapter` interface (`packages/legal-framework/src/adapter.ts`).
+
+Adapter selection is **not** a user choice. The adapter is resolved server-side from the DB-recorded `case.jurisdiction` field. Officers never pick a jurisdiction at authorization time.
+
+Deployment topology is a **config choice**, not a code choice: a single-jurisdiction pilot registers one adapter; a federated multi-tenant deployment registers all three.
+
+### 2. Warrant-first, defense-in-depth enforcement
+
+Nothing is collected without a valid `Authorization` row. Every collection call passes through a `CollectionGate` that reads its permission from the DB, not from configuration.
+
+Cross-jurisdiction contamination (e.g., citing Title III on an Indian warrant, or attaching UK §32 duration to a US authorization) is refused at **nine independent architectural layers**:
+
+| Layer | Mechanism | Location |
+|---|---|---|
+| L1 | `case.jurisdiction` DB CHECK + immutability trigger | `supabase/migrations/20260831120000_*.sql` |
+| L2 | `authorization.jurisdiction = case.jurisdiction` trigger | `supabase/migrations/20260831120000_*.sql` |
+| L3 | `statute_references` prefix-matches-jurisdiction trigger | `supabase/migrations/20260831120000_*.sql` |
+| L4 | Adapter `validateAuthorization()` refuses non-matching prefixes | `packages/legal-framework/src/*/index.ts` |
+| L5 | Adapter `generateEvidenceCertificate()` refuses cross-prefix mix | `packages/legal-framework/src/*/index.ts` |
+| L6 | RLS scopes reads to officer's `home_jurisdiction` (+ explicit grants) | `supabase/migrations/20260831110906_*.sql`, `20260831120000_*.sql` |
+| L7 | Per-jurisdiction UI theming (register style, header, accent) | `forensic-console/lib/jurisdiction-theme.ts` |
+| L8 | Case jurisdiction is set at creation only; wizard shows locked pill | `forensic-console/app/authorizations/new/wizard-client.tsx` |
+| L9 | Audit chain-root anchored hourly to OpenTimestamps (external, immutable) | `supabase/migrations/20260904000000_*.sql`, `scripts/anchor-audit-root.ts` |
+
+Layers 1–3 are enforced *before* any application code runs (Postgres triggers). Layers 4–5 are enforced in TypeScript adapter code. Layer 6 is enforced at read time by RLS. Layers 7–8 prevent honest human error at the officer level. Layer 9 (added most recently) closes a rogue-service-role tamper channel by publishing chain-root commitments to a public timestamping authority.
+
+Per-jurisdiction warrant-extension caps are enforced by both an adapter method (`computeCumulativeCapRemaining()`) and a DB trigger (`authorization_extension_within_cap`). India §69 caps at 180 days cumulative (IT Rules 2009 R.11); US Title III and UK IPA are statute-silent on cumulative caps and return null.
+
+### 3. Dual-control and role separation
+
+Administrative and judicial actions require two-person authorization by design:
+
+- **Officer provisioning:** two admins must co-approve every officer invitation (`supabase/migrations/20260902000200_*.sql`). Admins are scoped to a single jurisdiction; the ADMIN role itself is not invitable through the console and can only be bootstrapped via SQL (`docs/ADMIN_BOOTSTRAP.md`) — segregation of duties.
+- **Warrant issuance:** Review Committee sign-off is a first-class column on `authorization` (`review_status`, `review_approved_by`, `review_approved_at`), implementing IT Rules 2009 R.22.
+- **Evidence export:** dual-officer approval on `evidence_export`; the certificate renderer refuses to run without both approvals.
+- **Filter Team:** privileged communications (attorney-client, medical, clergy, spousal) are quarantined to a dedicated `FILTER_TEAM` role, organizationally distinct from case investigators.
+- **Subject rights:** defense counsel can request magic-link access to case metadata via `/counsel` and file objections that route to the Review Committee.
+
+### 4. Reused-not-reinvented
+
+SendWiseForensic is a fork; it inherits from three upstream/sibling codebases and builds only what is new:
+
+| Reused from | Component |
+|---|---|
+| [SendWise](https://github.com/NamrataG7/SendWise) | On-device Random Forest cyberbullying classifier + Android IME + hardcoded slur lexicon (`SupervisedKeyboardApp/`, adapted with `CollectionGate` overlay) |
+| SendWise `parental-dashboard` | Next.js 14 + Supabase SSR + Zod validation stack; forked into `forensic-console/` and re-scoped for warrants/officers/subjects |
+| DDD Bounded Contexts (Evans 2003) | The `LegalFrameworkAdapter` pattern is Bounded Contexts applied to legal-regulatory diversity |
+| OpenTimestamps (Todd 2016) | Bitcoin-anchored audit-chain publication for Layer L9 |
+| Compliance-as-code frameworks (OPA, Chef InSpec) | The prefix-tagged statute enum + adapter validation approach |
+
+What is genuinely new: (a) the dual-mode on-device design (privacy-preserving default; warrant-scoped inversion under an authorization record), (b) the adapter pattern applied to *surveillance* statutes with cross-jurisdiction contamination refusal, and (c) the encoding of constitutional proportionality tests (Puttaswamy four-prong, Berger particularity, ECHR Art. 8 three-prong) as machine-checked data-schema constraints.
+
+---
 
 ## Authorization pathways
 
 | Pathway | Legal basis (India) | Who authorizes | Consent required |
 |---|---|---|---|
-| `JUDICIAL_WARRANT` | IT Act §69 + 2009 Interception Rules | Union/State Home Secretary + Review Committee | No |
+| `JUDICIAL_WARRANT` | IT Act §69 + IT Rules 2009 | Union/State Home Secretary + Review Committee | No |
 | `BAIL_CONDITION` | BNSS bail provisions | Magistrate / Sessions Court | Court-imposed |
-| `PROBATION_ORDER` | Probation of Offenders Act, 1958 | Court | Court-imposed |
+| `PROBATION_ORDER` | Probation of Offenders Act 1958 | Court | Court-imposed |
 | `PLEA_AGREEMENT` | BNSS Ch. XXIII (plea bargaining) | Court-recorded | Documented consent |
 | `CORPORATE_INSIDER` | Employment contract + IT Act §43A | Employer + employee | Explicit, revocable |
 | `VOLUNTARY_VICTIM` | DPDPA 2023 consent | Data principal | Explicit, revocable |
 
-See [`docs/LEGAL_FRAMEWORK_IN.md`](docs/LEGAL_FRAMEWORK_IN.md) for the full India statute mapping.
+See [`docs/LEGAL_FRAMEWORK_IN.md`](docs/LEGAL_FRAMEWORK_IN.md), [`docs/LEGAL_FRAMEWORK_US.md`](docs/LEGAL_FRAMEWORK_US.md), and [`docs/LEGAL_FRAMEWORK_UK.md`](docs/LEGAL_FRAMEWORK_UK.md) for the full per-jurisdiction statute mappings.
 
-## Jurisdiction adapters
+---
 
-SendWiseForensic is **trunk-based**. There is a single long-lived branch (`main`); there are no long-lived `jurisdiction/*` branches. Jurisdiction-specific behaviour is implemented as **pluggable adapters** that all live in the trunk:
-
-- `packages/legal-framework/src/india/` — primary; IT Act §69 + 2009 Rules, BNSS, BNS, BSA §63, DPDPA 2023.
-- `packages/legal-framework/src/us/` — 4th Amendment, Title III (18 U.S.C. §§2510–2523), ECPA, SCA, Pen/Trap.
-- `packages/legal-framework/src/uk/` — Investigatory Powers Act 2016 (double-lock, §56), RIPA legacy, DPA 2018 Part 3, PACE 1984.
-
-Each adapter implements a common `LegalFrameworkAdapter` interface. **Adapter selection is not a user choice.** It is derived from the DB-recorded `jurisdiction` field on the `Case` (and echoed on every `Authorization`). An officer cannot pick a jurisdiction at authorization time — the field is inherited from the case, and the case's jurisdiction is immutable after creation.
-
-Cross-jurisdiction contamination (e.g., issuing a Title III order under an Indian case, or attaching a UK IPA §32 duration to a US authorization) is refused **twice**: once at authorization-validation time by the adapter, and again at certificate-generation time by the renderer. Belt-and-braces.
-
-Deployment topology is a **config choice**, not a code choice:
-
-- **Single-jurisdiction deployment** (e.g., an India-only academic pilot) — only the `india` adapter is registered; the ENUM still carries `US`/`UK` values but no adapter answers to them, and the API rejects case creation for unregistered jurisdictions.
-- **Multi-jurisdiction / federated tenants** — all three adapters are registered; each tenant is pinned to one jurisdiction; officers are assigned a home jurisdiction and (rarely) explicit cross-jurisdiction grants.
-
-See [`docs/LEGAL_FRAMEWORK_IN.md`](docs/LEGAL_FRAMEWORK_IN.md), [`docs/LEGAL_FRAMEWORK_US.md`](docs/LEGAL_FRAMEWORK_US.md), and [`docs/LEGAL_FRAMEWORK_UK.md`](docs/LEGAL_FRAMEWORK_UK.md) for the per-jurisdiction statute mappings.
-
-### Jurisdiction distinction — how confusion is prevented
-
-Confusion between jurisdictions is not merely discouraged by documentation; it is prevented by eight independent technical mechanisms:
-
-1. **Immutable jurisdiction on Case and Subject.** Every `case` and `subject` row carries a `jurisdiction` column enforced by a DB `CHECK` (via the `jurisdiction` ENUM) plus an `UPDATE` trigger that raises an exception on any attempt to change it after insert.
-2. **Authorization inherits Case.jurisdiction.** Every `authorization` row carries its own `jurisdiction` column, and a trigger refuses any INSERT/UPDATE where `authorization.jurisdiction` does not equal `(SELECT jurisdiction FROM case WHERE id = authorization.case_id)`. Defense in depth against a rogue service bug.
-3. **Adapter selection is by DB field, never by user pick.** The `AdapterRegistry` in `packages/legal-framework` resolves the adapter from `case.jurisdiction`. There is no "choose your jurisdiction" control in the officer UI at authorization time.
-4. **Statute references are jurisdiction-prefixed.** Every code in `authorization.statute_references` must begin with `IN_`, `US_`, or `UK_`. A DB trigger rejects any element whose prefix does not match the row's jurisdiction. Cross-prefix contamination is impossible at the storage layer.
-5. **RLS filters cases by officer's assigned jurisdiction.** An officer sees `case`/`authorization`/`evidence` rows only where the row's jurisdiction matches the officer's `home_jurisdiction`, or where an explicit `officer_jurisdiction_grant` row exists.
-6. **Distinct visual identity per jurisdiction in the console.** Each jurisdiction has its own register style, header text, and colour accent, so an officer cannot mistake one workspace for another at a glance.
-7. **Distinct certificate templates.** BSA §63 (India), Title III §2518 (US), and IPA 2016 §56 (UK) certificates are separate templates; the renderer refuses to mix statute language across jurisdictions and refuses to render at all if the authorization's jurisdiction does not match the case's.
-8. **Distinct dummy-verification providers per jurisdiction.** The India adapter stubs Aadhaar / UIDAI e-Sign / DigiLocker; the US adapter stubs a DOJ/FRCP Rule 41 signature stub; the UK adapter stubs an IPC / Judicial Commissioner double-lock stub. Providers are wired per-adapter, never shared.
-
-Mechanisms 1, 2, 4, and 5 are implemented in `supabase/migrations/`. Mechanisms 3, 6, 7, and 8 are implemented in `packages/legal-framework/` and `forensic-console/`.
-
-## Repository layout (inherited from SendWise, being adapted)
+## Repository layout
 
 ```
 SendWiseForensic/
 ├── docs/
 │   ├── LEGAL_FRAMEWORK_IN.md         # India statute → feature mapping
+│   ├── LEGAL_FRAMEWORK_US.md         # US statute → feature mapping
+│   ├── LEGAL_FRAMEWORK_UK.md         # UK statute → feature mapping
 │   ├── ENTITY_MODEL.md               # ER model + role matrix
-│   └── PROTOTYPE_NOTICE.md           # Prototype scope + Aadhaar stubs
-├── forensic-console/                 # (formerly parental-dashboard)
-├── SupervisedKeyboardApp/            # (formerly SafeKeyboardApp)
-├── shared/detection-library/         # reused
-└── model_training/                   # reused; taxonomy will expand
+│   ├── ADMIN_BOOTSTRAP.md            # One-time SQL to seed admins
+│   ├── DEPLOY.md                     # Vercel + Supabase deployment guide
+│   ├── PROTOTYPE_NOTICE.md           # Prototype scope + honest stubs list
+│   ├── INHERITANCE_MAP.md            # What is reused from SendWise vs. new
+│   └── design/                       # Design-only docs for future work
+├── forensic-console/                 # Next.js 14 admin/officer/counsel console
+├── packages/
+│   ├── legal-framework/              # IN / US / UK adapters, statute enums, validators
+│   ├── evidence-certificate/         # BSA §63 / §2518 / IPA §56 renderers
+│   └── dummy-verification/           # Prototype-only identity + e-Sign stubs
+├── SupervisedKeyboardApp/            # Android IME with CollectionGate + Evidence pipeline
+├── supabase/migrations/              # Schema, RLS, triggers, audit chain, cron
+└── scripts/                          # Bench + L9 anchor + operational scripts
 ```
 
-## MVP scope (academic deliverable)
-
-- India jurisdiction only.
-- `JUDICIAL_WARRANT` pathway only (other pathways scaffolded, not implemented).
-- Entity model + warrant-gated ingest.
-- Hash-chained audit log.
-- Auto-generated BSA §63 evidence certificate on export.
-- Subject portal (defense counsel view).
-- Dummy Aadhaar / e-Sign with visible "PROTOTYPE" banner.
+---
 
 ## Getting started
 
-_TBD — scaffolding in progress. See `docs/ENTITY_MODEL.md` for the data model landing next._
+Deploying a fresh instance takes ~1 hour on free tiers:
 
-## License
+1. **Read** [`docs/PROTOTYPE_NOTICE.md`](docs/PROTOTYPE_NOTICE.md) so you know what is real vs. stubbed.
+2. **Follow** [`docs/DEPLOY.md`](docs/DEPLOY.md) — provisions Supabase, applies all migrations in filename order, deploys the console to Vercel.
+3. **Bootstrap** two admins per [`docs/ADMIN_BOOTSTRAP.md`](docs/ADMIN_BOOTSTRAP.md) (SQL only — dual-control).
+4. **Invite** officers via the admin console (`/admin/officers/new`), which requires the second admin's co-approval before the magic-link email is sent.
+5. **Follow** the end-to-end verification checklist in [`docs/paper/DEPLOY_REPRODUCIBILITY.md`](docs/paper/DEPLOY_REPRODUCIBILITY.md) to confirm the deployment.
 
-Inherits SendWise's MIT license. See `LICENSE`.
+For the Android app, `SupervisedKeyboardApp/` builds via `./gradlew assembleDebug`; a signed debug APK is also produced automatically by the `Build SupervisedKeyboardApp APK` GitHub Actions workflow on every push.
+
+---
+
+## Design docs
+
+Deeper reading, all under `docs/`:
+
+- **`ENTITY_MODEL.md`** — data model, role matrix, RLS invariants, threat classes.
+- **`LEGAL_FRAMEWORK_IN.md` / `_US.md` / `_UK.md`** — per-jurisdiction statute mapping.
+- **`ADMIN_BOOTSTRAP.md`** — SQL-only admin provisioning (segregation of duties).
+- **`DEPLOY.md`** — end-to-end deployment.
+- **`INHERITANCE_MAP.md`** — reuse map: what is inherited from SendWise vs. new.
+- **`design/`** — extension design docs (warrant extensions, retention lifecycle, multi-device, oversight dashboard) for work not yet in the MVP.
+
+---
+
+## Licence
+
+Inherits SendWise's MIT licence. See [`LICENSE`](LICENSE).

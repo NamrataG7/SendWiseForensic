@@ -15,9 +15,10 @@ Before we survey the field, be honest about our own claim so the survey can be s
 
 1. A dual-mode CollectionGate implemented in Android IME so the same code path is either privacy-preserving or evidence-collecting depending on a signed authorization record.
 2. A jurisdiction-adapter pattern (IN / US / UK) mirroring Domain-Driven Design's Bounded Context, in which each jurisdiction's statutes are expressed as first-class code enums and validation rules.
-3. Immutable-jurisdiction enforcement via 8 orthogonal layers (Case.jurisdiction DB check, immutability trigger, Authorization.jurisdiction FK to Case, statute-prefix trigger, adapter validation, adapter certificate refusal, RLS, UI theming).
+3. Immutable-jurisdiction enforcement via **nine** orthogonal layers (Case.jurisdiction DB check, immutability trigger, Authorization.jurisdiction FK to Case, statute-prefix trigger, adapter validation, adapter certificate refusal, RLS, UI theming, and externally-anchored audit chain via OpenTimestamps).
 4. BSA Section 63 (India, replacing prior Evidence Act §65B) evidence-certificate generation as a first-class product output.
 5. Dual-control administrative provisioning of officers (two admins co-approve) and Review-Committee dual-signoff of authorizations, implementing IT Rules 2009 R.22 in code.
+6. Per-jurisdiction cumulative-cap enforcement on warrant extensions realised in code + DB trigger (IN §69: 180-day cap under IT Rules 2009 R.11; US Title III + UK IPA: statute-silent).
 
 **Non-claims (do not overreach):**
 - We do not claim empirical evaluation with real subjects or case data (ethically infeasible for a student prototype).
@@ -253,32 +254,40 @@ If you eventually run a real pilot (which the paper does *not* require), it must
 
 ## 10. What to add to the artifact before submitting
 
-Rank-ordered by cost / benefit:
+Rank-ordered by cost / benefit. **Status column reflects work completed so far.**
 
-1. **Structured expert review** (see §9). Highest impact, moderate cost (asking 6 people). Adds qualitative evaluation section.
-2. **Micro-benchmark of enforcement layers.** Small experiments: how many attempted policy-violations does each layer block per second? Adds a small quantitative section. Half a day of work.
-3. **Threat model appendix.** Formal STRIDE / LINDDUN analysis of the design. Half a day.
-4. **Related-work section** (this doc gives you the skeleton).
-5. **Scenario walkthrough section.** Narrate one warrant lifecycle end-to-end with screenshots + DB traces + certificate PDF. Real, reproducible, half a day.
-6. **Reproducibility artifact** — repo already public, add a README with exact deploy steps (`docs/DEPLOY.md` exists).
+| # | Item | Status | Notes |
+|---|---|---|---|
+| 1 | Structured expert review (see §9) | ⏳ Protocol ready in `EXPERT_REVIEW_PROTOCOL.md`; awaiting reviewer recruitment | Your action |
+| 2 | Micro-benchmark of enforcement layers | ⏳ Script ready at `scripts/benchmark-enforcement-layers.ts`; awaiting execution against local Postgres | Your action |
+| 3 | Threat model appendix (STRIDE + LINDDUN) | ✅ **Done.** `THREAT_MODEL.md` prose + `figures/THREAT_MODEL_DIAGRAM.md` Mermaid diagrams (three views including the cross-jurisdictional refusal money shot) | Landed in PR #42 |
+| 4 | Related-work section (this doc gives you the skeleton) | ✅ **Done** as skeleton; will be turned into paper prose | This doc |
+| 5 | Scenario walkthrough section | ⏳ `SCENARIO_WALKTHROUGH.md` script ready; awaiting screenshot capture | Your action |
+| 6 | Reproducibility artifact | ✅ **Done.** `DEPLOY_REPRODUCIBILITY.md` with 11 verification checkpoints A–K | Landed in PR #39 |
+| 7 | Externally-anchored audit chain (Layer L9) | ✅ **Done.** Adds a ninth defense layer; closes strongest weakness in the threat model. `L9_EXTERNAL_ANCHORING.md` + migration `20260904000000` + `scripts/anchor-audit-root.ts` | Landed in PR #42 |
+| 8 | Per-jurisdiction warrant-extension cap enforcement | ✅ **Done.** Adapter method `computeCumulativeCapRemaining()` in IN / US / UK + DB trigger `authorization_extension_within_cap` enforcing IT Rules 2009 R.11 180-day cap | Landed in PR #42 |
+| 9 | Originality search — Google Scholar + Semantic Scholar + arXiv | ✅ **Done across three surfaces.** `ORIGINALITY_SEARCH.md`. Three adjacent citations identified (Kumar 2026, Rathod & Dcosta 2026, Bharathan 2025); no direct competitor found. | Landed in PRs #40 and #42 |
+| 10 | Librarian consultation (paywalled sources) | ⏳ Not yet booked | Your action |
 
-Do all six and the paper is competitive at IEEE Access. Do only 1, 4, 5 and it is competitive at IJLIT / JIPITEC.
+Everything in the "✅ Done" rows is a paper section that can be drafted directly. Every "⏳" row is a specific deliverable that only you can produce (recruit reviewers / run benchmark / take screenshots / talk to librarian).
 
 ---
 
 ## 11. Concrete next steps
 
+Six of the ten artifact items are already done (rows 3, 4, 6, 7, 8, 9 in §10). Four remain and are your action.
+
 If you commit to writing the paper:
 
 - **This week.** Choose venue (I recommend JIPITEC or IEEE Access). Draft a 200-word abstract. Send to a supervisor / mentor for reaction.
-- **Weeks 2-3.** Reach out to 6 potential expert reviewers (legal + technical). Draft the expert-review protocol (5-question written form).
-- **Weeks 4-5.** Write design + related-work sections from this doc.
-- **Weeks 6-7.** Run micro-benchmarks and scenario walkthrough. Add quantitative section.
-- **Week 8.** Get expert reviews back, add qualitative section.
-- **Weeks 9-10.** Draft intro + conclusion + limitations. Get 2 friendly reviewers.
+- **Weeks 2–3.** Reach out to 16 potential expert reviewers per `EXPERT_REVIEW_PROTOCOL.md` (item 1). Book a 1-hour librarian consultation (item 10). Run the micro-benchmark and commit `docs/paper/results/benchmark.md` (item 2).
+- **Weeks 4–5.** Collect expert-review responses. Walk through the 23-step demo per `SCENARIO_WALKTHROUGH.md` and commit screenshots to `docs/paper/figures/fig-{1..23}.png` (item 5).
+- **Weeks 6–7.** Write design + related-work + threat-model sections directly from the done docs.
+- **Week 8.** Thematic analysis of expert reviews; write §5.
+- **Weeks 9–10.** Draft intro + conclusion + limitations. Get 2 friendly reviewers.
 - **Week 11.** Submit.
 
-Realistic 10-11 week timeline for a first-author paper on an existing artifact.
+Realistic 11-week timeline from today.
 
 ---
 
