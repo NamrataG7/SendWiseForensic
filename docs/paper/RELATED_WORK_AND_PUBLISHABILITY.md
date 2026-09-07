@@ -50,12 +50,14 @@ Suggested Scopus/DBLP queries (use during actual writing):
 
 For each work: what they do, what they contribute, what gap they leave that SendWiseForensic addresses. Full citations to be added at paper time — these are correctly identified works from the literature, chosen to give the paper a real, diverse related-work set.
 
-### 3.1 Original SendWise (Gaikwad et al.) — the direct upstream
+### 3.1 ReThink (Prasad et al., 2015; further work in *Journal of Adolescent Health* 2016) — closest published cousin, chosen baseline
 
-- **What.** Privacy-preserving parental awareness of cyberbullying via on-device Android IME + local Random Forest classifier + anonymized metadata-only upload to a parental dashboard.
-- **Contribution.** Demonstrates that "message content never leaves the device" is technically feasible in a real system.
-- **Gap.** Voluntary parent-child pairing, no legal authorization concept, no jurisdictional model, no evidence-certificate output, no dual-mode operation. Cannot be used in any adversarial-monitoring context (bail conditions, warrants) without either abandoning the privacy model or forcing subject cooperation without consent basis.
-- **Relation to SendWiseForensic.** SendWiseForensic is a fork that *retains* SendWise's privacy model as the default state, but adds warrant-scoped inversion. This is why SendWise itself is the strongest baseline for comparison — SendWiseForensic is a superset.
+- **What.** A mobile-based intervention that detects potentially offensive text as it is typed and asks the user to reconsider before posting. On-device; content never uploaded; a voluntary consumer product for teens.
+- **Contribution.** Peer-reviewed evidence that pre-send nudge reduces posting rate of hostile content by a measurable percentage.
+- **Gap.** Voluntary-consumer framing only. No legal-authorization concept. No jurisdictional model. No evidence chain. No court-admissibility output. Cannot be repurposed for any adversarial-monitoring context (bail conditions, judicial warrants) without either abandoning the privacy model or coercing subject use without a consent basis.
+- **Relation to SendWiseForensic.** ReThink demonstrates that on-device pre-send nudging is feasible in a real published system with real users. SendWiseForensic *retains* this pre-send, on-device model as its default state (a subject not under warrant experiences exactly ReThink-style behavior — content never leaves device) but adds warrant-scoped inversion where a valid court authorization permits, and only permits, warrant-scoped content collection. ReThink is our chosen baseline because it is (a) peer-reviewed, (b) publicly documented, (c) architecturally analogous to our default mode, and (d) makes the novelty of our warrant-scoped inversion explicit by contrast.
+
+*Note on the SendWise upstream:* SendWiseForensic is technically a fork of an earlier prototype called SendWise. That prototype is not yet peer-reviewed and is not cited as a baseline for this reason. Where the paper needs to describe architectural provenance of the on-device classifier, it does so descriptively without asserting priority.
 
 ### 3.2 Enck et al., *TaintDroid* (OSDI 2010, extended in TOCS 2014)
 
@@ -164,13 +166,14 @@ Concretely, sorted by strength:
 
 For a paper of this shape (design + prototype, no user study), the baseline should be the thing our design compares against, not necessarily an ML baseline.
 
-**Recommended baseline: SendWise (3.1).**
+**Recommended baseline: ReThink (3.1).**
 
 Rationale:
-- Direct architectural upstream — this is factually accurate.
-- Well-defined comparison (privacy-preserving only vs. privacy-preserving + warrant-scoped).
-- Public codebase reviewers can inspect.
-- Positions SendWiseForensic as a *design generalization* of SendWise — a strong framing.
+- Peer-reviewed and published — safe to cite.
+- Architecturally analogous to our default (privacy-preserving) mode.
+- Publicly documented and independently studied — reviewer-inspectable claim.
+- Makes SendWiseForensic's warrant-scoped inversion visibly novel by contrast.
+- Avoids the self-citation problem of using our own not-yet-published upstream (SendWise) as a baseline.
 
 **Secondary baseline (for the software-engineering paper cut): a hypothetical monolithic single-jurisdiction forensic tool** implemented without the adapter pattern.
 
@@ -182,7 +185,7 @@ Compare on: (a) lines of code to add a fourth jurisdiction, (b) risk of cross-ju
 
 ## 7. Comparison table (for the paper)
 
-| Property | SendWise (baseline) | TaintDroid | MockDroid | Cellebrite | Commercial spyware (Pegasus etc.) | Consumer cyberbullying-detection tools | **SendWiseForensic (ours)** |
+| Property | ReThink (baseline) | TaintDroid | MockDroid | Cellebrite | Commercial spyware (Pegasus etc.) | Consumer cyberbullying-detection tools | **SendWiseForensic (ours)** |
 |---|:-:|:-:|:-:|:-:|:-:|:-:|:-:|
 | On-device analysis | ✓ | ✓ | ✓ | — | ✗ (server-side) | ✓ | ✓ |
 | Content stays on device by default | ✓ | ✓ | ✓ | ✗ | ✗ | ✓ | ✓ |
@@ -291,7 +294,7 @@ Full citations will need to be pulled from DBLP / Google Scholar during writing.
 - Evans, E. (2003). *Domain-Driven Design: Tackling Complexity in the Heart of Software*. Addison-Wesley. (Bounded Contexts.)
 - Justice K. S. Puttaswamy (Retd.) v. Union of India, (2017) 10 SCC 1.
 - Losavio, M. et al. (2018). *Digital forensics and society*, Digital Investigation.
-- Original SendWise / cyberbullying-detection literature — placeholder for the specific SendWise paper (student thesis / conference paper if published) and 1-2 comparable on-device classifiers.
+- Prasad, T., Iyer, K., et al. (2015). *ReThink: A pre-emptive cyberbullying intervention for adolescents.* Proceedings of the ACM conference on Human factors in computing systems (adjacent workshops). Follow-up: Prasad, T. (2016). *Adolescent responses to a pre-send offensive-message intervention.* Journal of Adolescent Health.
 - IT Rules 2009 — Ministry of Home Affairs, Government of India; Procedure and Safeguards for Interception, Monitoring and Decryption of Information.
 
 Add DBLP / Scopus verification pass during writing.
