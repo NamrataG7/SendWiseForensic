@@ -2,8 +2,7 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
-import { appendAudit } from '@/lib/db';
-import { jsonError, jsonOk, requestIp, resolveCaller } from '@/lib/api';
+import { jsonError, jsonOk, mapRpcErrorStatus, resolveCaller } from '@/lib/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -20,6 +19,11 @@ const SetHomeJurisdictionInputSchema = z
  *
  * One-shot home-jurisdiction picker. Refuses if the officer already has
  * a jurisdiction set (immutable except by admin grant).
+ *
+ * The officer.jurisdiction write + ROLE_GRANT audit append are delegated
+ * to the atomic p_officer_set_home_jurisdiction() RPC (migration
+ * 20260908000004_audit_atomicity_batch2.sql) so both commit or roll back
+ * together, in one transaction.
  *
  * TODO(SUPPORT-JURISDICTION-CHANGE-VIA-ADMIN-GRANT): admin-grant workflow
  * that lets a supervisor mint an officer_jurisdiction_grant row and
@@ -57,41 +61,27 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { error: updateErr } = await supabase
-    .from('officer')
-    .update({ jurisdiction: parsed.data.jurisdiction })
-    .eq('id', caller.officerId)
-    .is('jurisdiction', null);
-  if (updateErr) return jsonError(500, updateErr.message);
-
-  // TODO(AUDIT-ATOMICITY): update + audit are two round-trips. On audit
-  // failure we revert the update.
-  const audit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: caller.roles[0] ?? 'INVESTIGATING_OFFICER',
-    action: 'ROLE_GRANT', // repurposed audit_action — jurisdiction lock
-    targetType: 'officer',
-    targetId: caller.officerId,
-    context: {
-      homeJurisdiction: parsed.data.jurisdiction,
-      immutable: true,
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_officer_set_home_jurisdiction',
+    {
+      p_officer_id: parsed.data.officerId,
+      p_caller_officer_id: caller.officerId,
+      p_jurisdiction: parsed.data.jurisdiction,
+      p_caller_role: caller.roles[0] ?? 'INVESTIGATING_OFFICER',
     },
-    ip: requestIp(req),
-  });
-  if (!audit.ok) {
-    await supabase
-      .from('officer')
-      .update({ jurisdiction: null })
-      .eq('id', caller.officerId);
-    return jsonError(
-      502,
-      `home-jurisdiction reverted; audit append failed: ${audit.error}`,
-    );
+  );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
   }
+  const data = result as {
+    officerId: string;
+    homeJurisdiction: string;
+    auditId: number;
+  };
 
   return jsonOk({
-    officerId: caller.officerId,
-    homeJurisdiction: parsed.data.jurisdiction,
-    auditId: audit.id,
+    officerId: data.officerId,
+    homeJurisdiction: data.homeJurisdiction,
+    auditId: data.auditId,
   });
 }

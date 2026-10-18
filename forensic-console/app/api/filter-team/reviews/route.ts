@@ -3,14 +3,9 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
 import {
-  appendAudit,
-  applyFilterTeamDecisionToEvidence,
-  insertFilterTeamReview,
-} from '@/lib/db';
-import {
   jsonError,
   jsonOk,
-  requestIp,
+  mapRpcErrorStatus,
   requireRoleAny,
   resolveCaller,
 } from '@/lib/api';
@@ -39,11 +34,10 @@ const ReviewInputSchema = z
  * Audit events: FILTER_REVIEW, plus EVIDENCE_RELEASE or EVIDENCE_SUPPRESS
  * depending on decision.
  *
- * TODO(AUDIT-ATOMICITY): three writes (review insert, evidence update,
- * audit append) happen across separate round-trips. On any downstream
- * failure we run a best-effort compensating rollback of the earlier
- * writes and return 502. Proper fix: wrap all three inside a single
- * plpgsql function so they share a Postgres transaction.
+ * The review insert, evidence quarantine_status transition, and both
+ * audit appends are delegated to the atomic p_filter_team_decide() RPC
+ * (migration 20260908000004_audit_atomicity_batch2.sql) so all four
+ * writes commit or roll back together, in one transaction.
  *
  * TODO(FILTER-TEAM-INDEPENDENCE): single-role stub; production requires
  * organizational separation.
@@ -72,80 +66,30 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const insertResult = await insertFilterTeamReview(supabase, {
-    evidenceId: parsed.data.evidenceId,
-    reviewerId: caller.officerId,
-    decision: parsed.data.decision,
-    reason: parsed.data.reason,
-  });
-  if (!insertResult.ok) {
-    return jsonError(500, `review insert failed: ${insertResult.error}`);
-  }
-
-  const updateResult = await applyFilterTeamDecisionToEvidence(supabase, {
-    evidenceId: parsed.data.evidenceId,
-    decision: parsed.data.decision,
-    reason: parsed.data.reason,
-  });
-  if (!updateResult.ok) {
-    // TODO(AUDIT-ATOMICITY): compensating delete of the review row.
-    await supabase
-      .from('filter_team_review')
-      .delete()
-      .eq('id', insertResult.id);
-    return jsonError(500, `evidence update failed: ${updateResult.error}`);
-  }
-
-  const filterAudit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: 'FILTER_TEAM',
-    action: 'FILTER_REVIEW',
-    targetType: 'evidence',
-    targetId: parsed.data.evidenceId,
-    context: {
-      reviewId: insertResult.id,
-      decision: parsed.data.decision,
-      reason: parsed.data.reason,
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_filter_team_decide',
+    {
+      p_evidence_id: parsed.data.evidenceId,
+      p_reviewer_id: caller.officerId,
+      p_decision: parsed.data.decision,
+      p_reason: parsed.data.reason,
     },
-    ip: requestIp(req),
-  });
-  if (!filterAudit.ok) {
-    // TODO(AUDIT-ATOMICITY): revert quarantine_status back to PENDING_FILTER
-    // and delete the review row.
-    await supabase
-      .from('evidence')
-      .update({ quarantine_status: 'PENDING_FILTER' })
-      .eq('id', parsed.data.evidenceId);
-    await supabase
-      .from('filter_team_review')
-      .delete()
-      .eq('id', insertResult.id);
-    return jsonError(
-      502,
-      `filter review reverted; audit append failed: ${filterAudit.error}`,
-    );
+  );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
   }
-
-  // Best-effort follow-up audit for the derived evidence-level action.
-  const followUp =
-    parsed.data.decision === 'SUPPRESS'
-      ? 'EVIDENCE_SUPPRESS'
-      : 'EVIDENCE_RELEASE';
-  await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: 'FILTER_TEAM',
-    action: followUp,
-    targetType: 'evidence',
-    targetId: parsed.data.evidenceId,
-    context: { reviewId: insertResult.id },
-    ip: requestIp(req),
-  });
+  const data = result as {
+    reviewId: string;
+    decision: string;
+    filterAuditId: number;
+    followUpAuditId: number;
+  };
 
   return jsonOk(
     {
-      reviewId: insertResult.id,
+      reviewId: data.reviewId,
       decision: parsed.data.decision,
-      filterAuditId: filterAudit.id,
+      filterAuditId: data.filterAuditId,
     },
     201,
   );

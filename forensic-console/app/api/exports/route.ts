@@ -2,12 +2,11 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
-import { appendAudit } from '@/lib/db';
 import {
   jsonError,
   jsonOk,
+  mapRpcErrorStatus,
   refuseIfOnlyFilterTeam,
-  requestIp,
   requireRoleAny,
   resolveCaller,
 } from '@/lib/api';
@@ -49,6 +48,11 @@ const CreateExportInputSchema = z
  *
  * We insert with an empty approved_by. The API layer enforces status
  * transitions.
+ *
+ * The evidence_export insert + EVIDENCE_EXPORT audit append are delegated
+ * to the atomic p_export_create() RPC (migration
+ * 20260908000004_audit_atomicity_batch2.sql) so both commit or roll back
+ * together, in one transaction.
  */
 export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());
@@ -82,53 +86,23 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const { data: inserted, error: insertErr } = await supabase
-    .from('evidence_export')
-    .insert({
-      case_id: parsed.data.caseId,
-      evidence_ids: parsed.data.evidenceIds,
-      requested_by: caller.officerId,
-      approved_by: [],
-      purpose: parsed.data.purpose,
-      recipient_notice: parsed.data.recipientNotice,
-    })
-    .select('id')
-    .single();
-  if (insertErr || !inserted) {
-    return jsonError(500, `insert failed: ${insertErr?.message ?? 'unknown'}`);
-  }
-
-  const audit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: caller.roles.includes('SUPERVISING_OFFICER')
-      ? 'SUPERVISING_OFFICER'
-      : 'INVESTIGATING_OFFICER',
-    action: 'EVIDENCE_EXPORT',
-    targetType: 'evidence_export',
-    targetId: (inserted as { id: string }).id,
-    context: {
-      caseId: parsed.data.caseId,
-      evidenceCount: parsed.data.evidenceIds.length,
-      purpose: parsed.data.purpose,
-      derivedStatus: 'PENDING_APPROVAL',
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_export_create',
+    {
+      p_case_id: parsed.data.caseId,
+      p_evidence_ids: parsed.data.evidenceIds,
+      p_purpose: parsed.data.purpose,
+      p_recipient_notice: parsed.data.recipientNotice,
+      p_caller_officer_id: caller.officerId,
+      p_caller_role: caller.roles.includes('SUPERVISING_OFFICER')
+        ? 'SUPERVISING_OFFICER'
+        : 'INVESTIGATING_OFFICER',
     },
-    ip: requestIp(req),
-  });
-  if (!audit.ok) {
-    // TODO(AUDIT-ATOMICITY): compensating delete because supabase-js
-    // cannot span a single transaction across the insert + RPC.
-    await supabase
-      .from('evidence_export')
-      .delete()
-      .eq('id', (inserted as { id: string }).id);
-    return jsonError(
-      502,
-      `export reverted; audit append failed: ${audit.error}`,
-    );
-  }
-
-  return jsonOk(
-    { id: (inserted as { id: string }).id, auditId: audit.id },
-    201,
   );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
+  }
+  const data = result as { id: string; auditId: number };
+
+  return jsonOk({ id: data.id, auditId: data.auditId }, 201);
 }

@@ -2,12 +2,12 @@ import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
-import { appendAudit, listCasesForCurrentOfficer } from '@/lib/db';
+import { listCasesForCurrentOfficer } from '@/lib/db';
 import {
   jsonError,
   jsonOk,
+  mapRpcErrorStatus,
   refuseIfOnlyFilterTeam,
-  requestIp,
   requireRoleAny,
   resolveCaller,
 } from '@/lib/api';
@@ -43,8 +43,10 @@ const CreateCaseSchema = z
  *
  * The ONLY route in the console where a jurisdiction is chosen. The DB
  * trigger case_jurisdiction_immutable enforces immutability from this
- * point on. TODO(AUDIT-ATOMICITY): insert + p_append_audit are separate
- * round-trips; see lib/db.ts.
+ * point on. The "case" insert + AUTH_ISSUE audit append are delegated to
+ * the atomic p_case_create() RPC (migration
+ * 20260908000004_audit_atomicity_batch2.sql) so both commit or roll back
+ * together, in one transaction.
  */
 export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());
@@ -95,44 +97,16 @@ export async function POST(req: NextRequest) {
     return jsonError(409, 'jurisdiction mismatch between form and payload');
   }
 
-  const { data: inserted, error: insertErr } = await supabase
-    .from('case')
-    .insert({
-      jurisdiction: input.jurisdiction,
-      external_case_ref: input.externalCaseRef,
-      offences: input.offences,
-      status: 'OPEN',
-      created_by: caller.officerId,
-    })
-    .select('id')
-    .single();
-
-  if (insertErr || !inserted) {
-    return jsonError(500, `insert failed: ${insertErr?.message ?? 'unknown'}`);
-  }
-
-  const audit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: 'INVESTIGATING_OFFICER',
-    action: 'AUTH_ISSUE', // TODO(AUDIT-ACTIONS) add CASE_OPEN as a first-class action
-    targetType: 'case',
-    targetId: (inserted as { id: string }).id,
-    context: {
-      jurisdiction: input.jurisdiction,
-      externalCaseRef: input.externalCaseRef,
-    },
-    ip: requestIp(req),
+  const { data: result, error: rpcErr } = await supabase.rpc('p_case_create', {
+    p_jurisdiction: input.jurisdiction,
+    p_external_case_ref: input.externalCaseRef,
+    p_offences: input.offences,
+    p_caller_officer_id: caller.officerId,
   });
-
-  if (!audit.ok) {
-    // TODO(AUDIT-ATOMICITY) — compensating delete because the audit
-    // write is not in the same transaction as the case insert.
-    await supabase.from('case').delete().eq('id', (inserted as { id: string }).id);
-    return jsonError(
-      502,
-      `case written but audit append failed; compensating rollback applied: ${audit.error}`,
-    );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
   }
+  const data = result as { id: string; auditId: number };
 
-  return jsonOk({ id: (inserted as { id: string }).id }, 201);
+  return jsonOk({ id: data.id }, 201);
 }
