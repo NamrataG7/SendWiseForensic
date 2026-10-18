@@ -9,6 +9,7 @@ import StatuteRef from '@/components/StatuteRef';
 import { getAuthorizationById, listAuditTail } from '@/lib/db';
 import RevokeForm from './revoke-form';
 import EnrollmentCodeForm from './enrollment-code-form';
+import ApproveForm from '../approve-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -193,6 +194,15 @@ export default async function AuthorizationDetailPage({
                   Prototype stub — single-user approval (TODO REVIEW-COMMITTEE-QUORUM)
                 </Pill>
               </div>
+            </div>
+          ) : a.status === 'PENDING_REVIEW' ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted">
+                Awaiting Review Committee approval. Under 2009 Rules R.22 the
+                direction must be placed before the Review Committee within
+                seven working days.
+              </p>
+              <ApproveForm authorizationId={a.id} />
             </div>
           ) : (
             <p className="text-sm text-muted">

@@ -751,6 +751,142 @@ export interface OfficerFull {
   organization: string | null;
 }
 
+// ---------------------------------------------------------------------------
+// Review Committee queue: pending warrant approvals + pending extension
+// decisions. Both are cross-case reads — RLS's authorization_oversight_read
+// policy (USING (auth_role() IN ('COMPETENT_AUTHORITY','REVIEW_COMMITTEE')))
+// already grants REVIEW_COMMITTEE cross-case SELECT on `authorization`;
+// authorization_extension's extension_case_officer_read policy is
+// USING (true) for all authenticated officers, so no RLS gap for either
+// table. No new migration needed for this queue.
+// ---------------------------------------------------------------------------
+
+export interface PendingAuthorizationRow {
+  id: string;
+  caseId: string;
+  jurisdiction: 'IN' | 'US' | 'UK';
+  subjectId: string;
+  type: Authorization['type'];
+  issuedOn: Date;
+  expiresOn: Date;
+  statuteReferences: string[];
+  createdAt: Date;
+}
+
+/**
+ * Review Committee read: cross-case queue of authorizations awaiting
+ * initial issuance approval (status = 'PENDING_REVIEW'). Mirrors the
+ * field shape used by getAuthorizationById's single-record display.
+ */
+export async function listPendingAuthorizations(
+  supabase: SupabaseClient,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<PendingAuthorizationRow[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const { data, error } = await supabase
+    .from('authorization')
+    .select(
+      'id, case_id, jurisdiction, subject_id, type, issued_on, expires_on, statute_references, created_at',
+    )
+    .eq('status', 'PENDING_REVIEW')
+    .order('created_at', { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (error || !data) return [];
+  return (
+    data as unknown as Array<{
+      id: string;
+      case_id: string;
+      jurisdiction: 'IN' | 'US' | 'UK';
+      subject_id: string;
+      type: Authorization['type'];
+      issued_on: string;
+      expires_on: string;
+      statute_references: string[];
+      created_at: string;
+    }>
+  ).map((r) => ({
+    id: r.id,
+    caseId: r.case_id,
+    jurisdiction: r.jurisdiction,
+    subjectId: r.subject_id,
+    type: r.type,
+    issuedOn: new Date(r.issued_on),
+    expiresOn: new Date(r.expires_on),
+    statuteReferences: r.statute_references ?? [],
+    createdAt: new Date(r.created_at),
+  }));
+}
+
+export interface PendingExtensionRow {
+  id: string;
+  parentAuthorizationId: string;
+  requestedBy: string;
+  requestedAt: Date;
+  requestedNewExpiresOn: Date;
+  justification: string;
+  statuteReference: string;
+  // Parent authorization context, joined for display.
+  caseId: string;
+  jurisdiction: 'IN' | 'US' | 'UK';
+  subjectId: string;
+  currentExpiresOn: Date;
+}
+
+/**
+ * Review Committee read: cross-case queue of warrant-extension requests
+ * awaiting decision (decision_status = 'PENDING'), joined to the parent
+ * authorization for case/jurisdiction context.
+ */
+export async function listPendingExtensions(
+  supabase: SupabaseClient,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<PendingExtensionRow[]> {
+  const limit = Math.min(Math.max(opts.limit ?? 100, 1), 500);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const { data, error } = await supabase
+    .from('authorization_extension')
+    .select(
+      'id, parent_authorization_id, requested_by, requested_at, requested_new_expires_on, justification, statute_reference, ' +
+        'authorization:parent_authorization_id!inner(case_id, jurisdiction, subject_id, expires_on)',
+    )
+    .eq('decision_status', 'PENDING')
+    .order('requested_at', { ascending: true })
+    .range(offset, offset + limit - 1);
+  if (error || !data) return [];
+  return (
+    data as unknown as Array<{
+      id: string;
+      parent_authorization_id: string;
+      requested_by: string;
+      requested_at: string;
+      requested_new_expires_on: string;
+      justification: string;
+      statute_reference: string;
+      authorization: {
+        case_id: string;
+        jurisdiction: 'IN' | 'US' | 'UK';
+        subject_id: string;
+        expires_on: string;
+      } | null;
+    }>
+  )
+    .filter((r) => r.authorization !== null)
+    .map((r) => ({
+      id: r.id,
+      parentAuthorizationId: r.parent_authorization_id,
+      requestedBy: r.requested_by,
+      requestedAt: new Date(r.requested_at),
+      requestedNewExpiresOn: new Date(r.requested_new_expires_on),
+      justification: r.justification,
+      statuteReference: r.statute_reference,
+      caseId: r.authorization!.case_id,
+      jurisdiction: r.authorization!.jurisdiction,
+      subjectId: r.authorization!.subject_id,
+      currentExpiresOn: new Date(r.authorization!.expires_on),
+    }));
+}
+
 export async function getOfficerById(
   supabase: SupabaseClient,
   id: string,
