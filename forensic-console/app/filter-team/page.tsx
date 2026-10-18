@@ -25,8 +25,10 @@ export const metadata = {
  * accent to signal independent-review scope.
  *
  * TODO(FILTER-TEAM-INDEPENDENCE): production requires reviewers to be
- * organizationally independent (judicial officers, not police). The
- * prototype enforces role separation only.
+ * organizationally independent (judicial officers, not police) -- this
+ * remains open (HR/staffing policy, not a code-enforceable invariant).
+ * Role mutual-exclusion and case-assignment conflict ARE now DB-enforced
+ * (20260908000008_filter_team_independence_invariants.sql).
  */
 export default async function FilterTeamPage() {
   const supabase = createClient(await cookies());

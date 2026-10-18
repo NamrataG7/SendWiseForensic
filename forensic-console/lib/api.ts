@@ -139,8 +139,14 @@ export function requireRoleAny(
  * rejected at the application layer even before the DB check.
  *
  * TODO(FILTER-TEAM-INDEPENDENCE): production requires organizational
- * separation (independent judicial officers, not police). Prototype
- * enforces role separation only.
+ * separation (independent judicial officers, not police) -- this remains
+ * open; it's an HR/staffing policy question, not something code alone
+ * can enforce. Two concrete, mechanically-enforceable invariants ARE now
+ * DB-enforced (20260908000008_filter_team_independence_invariants.sql):
+ * role mutual-exclusion (an officer can't hold FILTER_TEAM alongside
+ * INVESTIGATING_OFFICER/SUPERVISING_OFFICER) and a case-assignment
+ * conflict check inside p_filter_team_decide (a reviewer can't decide on
+ * evidence from a case they're assigned to).
  */
 export function refuseIfOnlyFilterTeam(caller: {
   roles: RoleName[];

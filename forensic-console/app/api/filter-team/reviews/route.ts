@@ -39,8 +39,11 @@ const ReviewInputSchema = z
  * (migration 20260908000004_audit_atomicity_batch2.sql) so all four
  * writes commit or roll back together, in one transaction.
  *
- * TODO(FILTER-TEAM-INDEPENDENCE): single-role stub; production requires
- * organizational separation.
+ * TODO(FILTER-TEAM-INDEPENDENCE): organizational separation (judicial
+ * officers, not police) remains open -- HR/staffing policy, not code-
+ * enforceable. Role mutual-exclusion and case-assignment conflict ARE
+ * now DB-enforced inside p_filter_team_decide itself
+ * (20260908000008_filter_team_independence_invariants.sql).
  */
 export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());

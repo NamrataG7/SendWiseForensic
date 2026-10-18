@@ -15,8 +15,10 @@ export const dynamic = 'force-dynamic';
  * at the API layer for defence in depth.
  *
  * TODO(FILTER-TEAM-INDEPENDENCE): production requires the reviewers to be
- * organizationally independent (judicial officers). Prototype enforces
- * role separation only.
+ * organizationally independent (judicial officers) -- this remains open
+ * (HR/staffing policy, not code-enforceable). Role mutual-exclusion and
+ * case-assignment conflict ARE now DB-enforced
+ * (20260908000008_filter_team_independence_invariants.sql).
  */
 export async function GET(req: NextRequest) {
   const supabase = createClient(await cookies());
