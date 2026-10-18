@@ -222,10 +222,20 @@ export default async function CaseDetailPage({
                       key={s.id}
                       className="max-w-2xl border border-slate-200 bg-white p-6"
                     >
-                      <p className="eyebrow mb-2">Pseudonymous label</p>
-                      <p className="font-serif text-2xl text-ink">
-                        {s.pseudonymousLabel}
-                      </p>
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="eyebrow mb-2">Pseudonymous label</p>
+                          <p className="font-serif text-2xl text-ink">
+                            {s.pseudonymousLabel}
+                          </p>
+                        </div>
+                        <Link
+                          href={`/subjects/${s.id}`}
+                          className="shrink-0 border border-slate-200 px-3 py-1.5 text-xs font-semibold uppercase tracking-register text-primary hover:border-primary"
+                        >
+                          Open dashboard
+                        </Link>
+                      </div>
                       <dl className="mt-6 grid grid-cols-2 gap-4 text-sm">
                         <div>
                           <dt className="text-xs uppercase tracking-register text-muted">

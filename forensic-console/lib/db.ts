@@ -890,6 +890,163 @@ export async function listPendingExtensions(
     }));
 }
 
+// ---------------------------------------------------------------------------
+// Subject evidence dashboard: subject-scoped reads (new).
+//
+// These mirror the case-scoped helpers above (listAuthorizationsForCase,
+// listEvidenceMetadataForCase, getDeviceById) exactly, just re-keyed on
+// subject_id. No admin/service-role client is used anywhere here — all
+// reads go through the per-request RLS-respecting `supabase` client.
+// ---------------------------------------------------------------------------
+
+export interface SubjectRecord {
+  id: string;
+  pseudonymousLabel: string;
+  createdAt: Date;
+}
+
+/**
+ * Subject lookup scoped to the dashboard's needs only. Deliberately does
+ * NOT select identity_refs (hashed PII refs) — this read never needs them.
+ */
+export async function getSubjectById(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<SubjectRecord | null> {
+  const { data, error } = await supabase
+    .from('subject')
+    .select('id, pseudonymous_label, created_at')
+    .eq('id', subjectId)
+    .maybeSingle();
+  if (error || !data) return null;
+  const r = data as { id: string; pseudonymous_label: string; created_at: string };
+  return {
+    id: r.id,
+    pseudonymousLabel: r.pseudonymous_label,
+    createdAt: new Date(r.created_at),
+  };
+}
+
+export async function listAuthorizationsForSubject(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<Authorization[]> {
+  const { data, error } = await supabase
+    .from('authorization')
+    .select('*')
+    .eq('subject_id', subjectId)
+    .order('created_at', { ascending: false });
+  if (error || !data) return [];
+  return (data as AuthorizationRow[]).map(toAuthorization);
+}
+
+export async function listDevicesForSubject(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<DeviceRecord[]> {
+  const { data, error } = await supabase
+    .from('device')
+    .select('id, subject_id, platform, device_fingerprint, hardware_backed_pub_key')
+    .eq('subject_id', subjectId);
+  if (error || !data) return [];
+  return (data as unknown as DeviceRowRaw[]).map((r) => ({
+    id: r.id,
+    subjectId: r.subject_id,
+    platform: r.platform === 'CHROME_EXTENSION' ? 'CHROME_EXTENSION' : 'ANDROID',
+    deviceFingerprint: r.device_fingerprint,
+    hardwareBackedPubKey: r.hardware_backed_pub_key,
+  }));
+}
+
+/**
+ * Investigative read: evidence metadata for a subject (across all of
+ * their authorizations/sessions), RLS-scoped. Mirrors
+ * listEvidenceMetadataForCase's defence-in-depth quarantine filter
+ * exactly (RLS already excludes PENDING_FILTER/SUPPRESSED; we reassert
+ * it here too).
+ */
+export async function listEvidenceMetadataForSubject(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<EvidenceMetadataRow[]> {
+  const { data, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, synthetic, monitoring_session:session_id!inner(authorization:authorization_id!inner(subject_id))',
+    )
+    .eq('monitoring_session.authorization.subject_id', subjectId)
+    .or('quarantine_status.is.null,quarantine_status.eq.RELEASED')
+    .order('captured_at', { ascending: false });
+  if (error || !data) return [];
+  return (data as unknown as EvidenceRowRaw[]).map(toEvidenceMetadata);
+}
+
+const ALL_EVIDENCE_CATEGORIES: EvidenceCategoryDb[] = [
+  'KEYSTROKE_BATCH',
+  'APP_EVENT',
+  'COMMS_METADATA',
+  'RISK_DETECTION',
+];
+
+const ALL_PRIVILEGE_FLAGS: PrivilegeFlagDb[] = [
+  'NONE',
+  'LEGAL',
+  'MEDICAL',
+  'CLERGY',
+  'SPOUSAL',
+  'UNKNOWN',
+];
+
+export interface SubjectEvidenceSummary {
+  byCategory: Record<EvidenceCategoryDb, number>;
+  byPrivilegeFlag: Record<PrivilegeFlagDb, number>;
+  byDay: Array<{ date: string; count: number }>;
+  totalCount: number;
+  syntheticCount: number;
+}
+
+/**
+ * Aggregates listEvidenceMetadataForSubject in application code (no raw
+ * SQL aggregation, consistent with the rest of this file). All enum keys
+ * are pre-seeded at 0 so a charting component never has to special-case
+ * a missing key.
+ */
+export async function getSubjectEvidenceSummary(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<SubjectEvidenceSummary> {
+  const rows = await listEvidenceMetadataForSubject(supabase, subjectId);
+
+  const byCategory = Object.fromEntries(
+    ALL_EVIDENCE_CATEGORIES.map((c) => [c, 0]),
+  ) as Record<EvidenceCategoryDb, number>;
+  const byPrivilegeFlag = Object.fromEntries(
+    ALL_PRIVILEGE_FLAGS.map((f) => [f, 0]),
+  ) as Record<PrivilegeFlagDb, number>;
+  const byDayMap = new Map<string, number>();
+  let syntheticCount = 0;
+
+  for (const row of rows) {
+    byCategory[row.category] = (byCategory[row.category] ?? 0) + 1;
+    byPrivilegeFlag[row.privilegeFlag] = (byPrivilegeFlag[row.privilegeFlag] ?? 0) + 1;
+    const dateKey = row.capturedAt.toISOString().slice(0, 10); // UTC YYYY-MM-DD
+    byDayMap.set(dateKey, (byDayMap.get(dateKey) ?? 0) + 1);
+    if (row.synthetic) syntheticCount += 1;
+  }
+
+  const byDay = Array.from(byDayMap.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    byCategory,
+    byPrivilegeFlag,
+    byDay,
+    totalCount: rows.length,
+    syntheticCount,
+  };
+}
+
 export async function getOfficerById(
   supabase: SupabaseClient,
   id: string,
