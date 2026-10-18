@@ -10,9 +10,10 @@ import {
   getSubjectById,
   listAuthorizationsForSubject,
   listDevicesForSubject,
-  listEvidenceMetadataForSubject,
+  listEvidenceWithAuthorizationForSubject,
+  countPendingFilterForSubject,
   getSubjectEvidenceSummary,
-  type EvidenceMetadataRow,
+  type EvidenceWithAuthorizationRow,
   type PrivilegeFlagDb,
   type QuarantineStatusDb,
 } from '@/lib/db';
@@ -70,11 +71,12 @@ export default async function SubjectDashboardPage({
   const subject = await getSubjectById(supabase, params.subjectId);
   if (!subject) notFound();
 
-  const [authorizations, devices, evidence, summary] = await Promise.all([
+  const [authorizations, devices, evidence, summary, pendingFilterCount] = await Promise.all([
     listAuthorizationsForSubject(supabase, subject.id),
     listDevicesForSubject(supabase, subject.id),
-    listEvidenceMetadataForSubject(supabase, subject.id),
+    listEvidenceWithAuthorizationForSubject(supabase, subject.id),
     getSubjectEvidenceSummary(supabase, subject.id),
+    countPendingFilterForSubject(supabase, subject.id),
   ]);
 
   const primaryCaseId = authorizations[0]?.caseId ?? null;
@@ -258,6 +260,30 @@ export default async function SubjectDashboardPage({
                 {devices.length}
               </p>
             </div>
+            {pendingFilterCount > 0 ? (
+              <Link
+                href="/filter-team"
+                className="border-2 border-filter bg-filter/5 p-5 hover:bg-filter/10 motion-fade"
+              >
+                <p className="text-xs uppercase tracking-register text-filter">
+                  Awaiting Filter Team review
+                </p>
+                <p className="mt-1 font-serif text-3xl text-filter">
+                  {pendingFilterCount}
+                </p>
+                <p className="mt-1 text-[11px] text-filter">
+                  Count only — content stays hidden until independently
+                  reviewed →
+                </p>
+              </Link>
+            ) : (
+              <div className="border border-slate-200 bg-white p-5">
+                <p className="text-xs uppercase tracking-register text-muted">
+                  Awaiting Filter Team review
+                </p>
+                <p className="mt-1 font-serif text-3xl text-ink">0</p>
+              </div>
+            )}
           </div>
 
           {/* Charts */}
@@ -298,10 +324,11 @@ export default async function SubjectDashboardPage({
                       <th className="px-4 py-3 font-semibold">Quarantine</th>
                       <th className="px-4 py-3 font-semibold">Hash (tail)</th>
                       <th className="px-4 py-3 font-semibold">Evidence ID</th>
+                      <th className="px-4 py-3 font-semibold">Warrant</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {evidence.map((e: EvidenceMetadataRow) => (
+                    {evidence.map((e: EvidenceWithAuthorizationRow) => (
                       <tr
                         key={e.id}
                         className={`border-b border-slate-100 last:border-0 hover:bg-slate-50 ${
@@ -340,6 +367,14 @@ export default async function SubjectDashboardPage({
                         </td>
                         <td className="px-4 py-3 font-mono text-[11px] text-muted">
                           {e.id.slice(0, 8)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link
+                            href={`/authorizations/${e.authorizationId}`}
+                            className="font-mono text-[11px] text-primary hover:underline"
+                          >
+                            {e.authorizationId.slice(0, 8)} →
+                          </Link>
                         </td>
                       </tr>
                     ))}

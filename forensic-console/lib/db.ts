@@ -981,6 +981,71 @@ export async function listEvidenceMetadataForSubject(
   return (data as unknown as EvidenceRowRaw[]).map(toEvidenceMetadata);
 }
 
+export interface EvidenceWithAuthorizationRow extends EvidenceMetadataRow {
+  /** authorization.id for the session this evidence row belongs to --
+   * lets investigator-facing UI link straight to warrant context
+   * (/authorizations/[id]) from an evidence row, without exposing any
+   * additional evidence content. */
+  authorizationId: string;
+}
+
+interface EvidenceRowWithAuthRaw extends EvidenceRowRaw {
+  monitoring_session: { authorization: { id: string; subject_id: string } };
+}
+
+/**
+ * Same contract as listEvidenceMetadataForSubject, plus the owning
+ * authorization's id per row, for linking an evidence row back to its
+ * warrant. Kept as a separate function (rather than widening the shared
+ * EvidenceMetadataRow/toEvidenceMetadata used by the case-scoped and
+ * export-generation read paths) so this additive, UI-only convenience
+ * field can never leak into those other call sites by accident.
+ */
+export async function listEvidenceWithAuthorizationForSubject(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<EvidenceWithAuthorizationRow[]> {
+  const { data, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, synthetic, monitoring_session:session_id!inner(authorization:authorization_id!inner(id, subject_id))',
+    )
+    .eq('monitoring_session.authorization.subject_id', subjectId)
+    .or('quarantine_status.is.null,quarantine_status.eq.RELEASED')
+    .order('captured_at', { ascending: false });
+  if (error || !data) return [];
+  return (data as unknown as EvidenceRowWithAuthRaw[]).map((r) => ({
+    ...toEvidenceMetadata(r),
+    authorizationId: r.monitoring_session.authorization.id,
+  }));
+}
+
+/**
+ * Count of this subject's evidence rows currently sitting in the Filter
+ * Team's PENDING_FILTER quarantine queue. Deliberately a count only --
+ * never the rows themselves -- so an investigator can see "N items are
+ * awaiting privilege review" without this page ever bypassing Filter
+ * Team's independent review of privileged content. Uses the same
+ * subject_id join as the functions above but intentionally does NOT
+ * apply the quarantine_status defence-in-depth filter those use (we
+ * want exactly the quarantined rows here, not the released ones).
+ */
+export async function countPendingFilterForSubject(
+  supabase: SupabaseClient,
+  subjectId: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from('evidence')
+    .select(
+      'id, monitoring_session:session_id!inner(authorization:authorization_id!inner(subject_id))',
+      { count: 'exact', head: true },
+    )
+    .eq('monitoring_session.authorization.subject_id', subjectId)
+    .eq('quarantine_status', 'PENDING_FILTER');
+  if (error || count == null) return 0;
+  return count;
+}
+
 const ALL_EVIDENCE_CATEGORIES: EvidenceCategoryDb[] = [
   'KEYSTROKE_BATCH',
   'APP_EVENT',
