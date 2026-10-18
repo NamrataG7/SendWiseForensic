@@ -1,0 +1,58 @@
+name: Build Forensic Chrome Extension
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'extension/**'
+      - '.github/workflows/build-extension.yml'
+    tags:
+      - 'v*'
+  pull_request:
+    paths:
+      - 'extension/**'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Validate + package extension
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate manifest.json is well-formed
+        working-directory: extension
+        run: python3 -c "import json; json.load(open('manifest.json')); print('manifest.json OK')"
+
+      - name: Syntax-check all extension JS files
+        working-directory: extension
+        run: |
+          for f in $(find . -name '*.js'); do
+            node --check "$f" || exit 1
+            echo "OK: $f"
+          done
+
+      - name: Sanity-check model assets are present and non-empty
+        working-directory: extension
+        run: |
+          for f in models/sendwise_rf_v1.json.gz models/sendwise_category_v1.json.gz models/MODEL_CARD.json; do
+            test -s "$f" || { echo "missing or empty: $f"; exit 1; }
+          done
+          echo "model assets OK"
+
+      - name: Package extension as a zip (unpacked-load + Chrome Web Store upload format)
+        run: |
+          cd extension
+          zip -r ../sendwise-forensic-extension.zip . -x '*.DS_Store'
+          cd ..
+          unzip -l sendwise-forensic-extension.zip
+
+      - name: Upload extension artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sendwise-forensic-extension
+          path: sendwise-forensic-extension.zip
+          if-no-files-found: error

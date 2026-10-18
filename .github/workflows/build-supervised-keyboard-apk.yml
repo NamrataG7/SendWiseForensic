@@ -30,7 +30,22 @@ jobs:
           java-version: '21'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        # android-actions/setup-android@v3's default package set includes
+        # the legacy "tools" package, which Google removed from the SDK
+        # repository entirely -- sdkmanager now fails outright trying to
+        # resolve it ("Warning: Failed to find package 'tools'", exit 1),
+        # unrelated to any app code change. ubuntu-latest runners already
+        # ship a working Android SDK (ANDROID_HOME preinstalled) -- just
+        # accept licenses and install the specific packages this project
+        # needs instead of relying on the action's broken default set.
+        env:
+          ANDROID_SDK_ROOT: ${{ env.ANDROID_HOME }}
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
 
       - name: Cache Gradle packages
         uses: actions/cache@v4
