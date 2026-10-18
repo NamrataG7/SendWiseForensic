@@ -1,6 +1,7 @@
+import crypto from 'crypto';
 import { z } from 'zod';
-import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { appendAudit } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -37,7 +38,39 @@ const IngestSchema = z.object({
   clientVersion: z.string(),
 });
 
+function hashIngestToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 export async function POST(req: Request) {
+  // Per-device bearer credential, issued once at POST /api/devices/enroll
+  // and stored only as a hash on device.ingest_token_hash. Closes a
+  // pre-existing unauthenticated gap on this route.
+  const authHeader = req.headers.get('authorization');
+  const bearerMatch = authHeader?.match(/^Bearer\s+(.+)$/i);
+  const rawToken = bearerMatch?.[1];
+  if (!rawToken) {
+    return Response.json({ error: 'missing_bearer_token' }, { status: 401 });
+  }
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const secret = process.env.SUPABASE_SECRET_KEY;
+  if (!url || !secret) {
+    return Response.json({ error: 'server_misconfigured' }, { status: 500 });
+  }
+  const admin = createAdminClient(url, secret);
+
+  const tokenHash = hashIngestToken(rawToken);
+  const { data: tokenDevice } = await admin
+    .from('device')
+    .select('id, status')
+    .eq('ingest_token_hash', tokenHash)
+    .maybeSingle();
+  if (!tokenDevice) {
+    return Response.json({ error: 'invalid_token' }, { status: 401 });
+  }
+  const resolvedDevice = tokenDevice as { id: string; status: string };
+
   let body: unknown;
   try {
     body = await req.json();
@@ -50,21 +83,51 @@ export async function POST(req: Request) {
   }
   const { batches, device } = parsed.data;
 
-  const supabase = createClient(cookies());
-
-  // Look up the active MonitoringSession + Authorization from sessionId.
+  // Look up the MonitoringSession + Authorization from sessionId.
   const sessionId = batches[0]!.sessionId;
-  const { data: session } = await supabase
+  const { data: session } = await admin
     .from('monitoring_session')
-    .select('id, authorization_id, status')
+    .select('id, authorization_id, device_id, status, ends_at')
     .eq('id', sessionId)
-    .single();
+    .maybeSingle();
   if (!session || session.status !== 'ACTIVE') {
     return Response.json({ error: 'session_not_active' }, { status: 403 });
   }
+  const sessionRow = session as {
+    id: string;
+    authorization_id: string;
+    device_id: string;
+    status: string;
+    ends_at: string;
+  };
+
+  // Assert the monitoring_session's device_id matches the token-resolved
+  // device's id — prevents token/payload device_id mismatch.
+  if (sessionRow.device_id !== resolvedDevice.id) {
+    return Response.json({ error: 'device_session_mismatch' }, { status: 403 });
+  }
+
+  // Re-validate the associated authorization is ACTIVE and within its time
+  // window at submission time. This duplicates the existing DB trigger
+  // enforce_evidence_active_authorization intentionally (API-layer clean
+  // error before the raw insert fails inside the DB) — the DB trigger
+  // remains the hard boundary and is NOT removed or weakened.
+  const { data: authorization } = await admin
+    .from('authorization')
+    .select('id, status, expires_on')
+    .eq('id', sessionRow.authorization_id)
+    .maybeSingle();
+  const authRow = authorization as { id: string; status: string; expires_on: string } | null;
+  if (!authRow || authRow.status !== 'ACTIVE') {
+    return Response.json({ error: 'authorization_not_active' }, { status: 403 });
+  }
+  const now = new Date();
+  if (now > new Date(authRow.expires_on) || now > new Date(sessionRow.ends_at)) {
+    return Response.json({ error: 'authorization_window_elapsed' }, { status: 403 });
+  }
 
   const rows = batches.map((b) => ({
-    session_id: session.id,
+    session_id: sessionRow.id,
     category: b.category,
     captured_at: b.capturedAt,
     payload_hash: b.batchHashHex,
@@ -76,17 +139,17 @@ export async function POST(req: Request) {
     quarantine_status: b.privilegeFlag === 'NONE' ? null : 'PENDING_FILTER',
   }));
 
-  const { error } = await supabase.from('evidence').insert(rows);
+  const { error } = await admin.from('evidence').insert(rows);
   if (error) return Response.json({ error: 'insert_failed', detail: error.message }, { status: 500 });
 
   // TODO(AUDIT-ATOMICITY): move insert + audit into a single plpgsql function.
-  await supabase.rpc('p_append_audit', {
-    p_actor_id: null,
-    p_actor_role: 'SYSTEM',
-    p_action: 'EVIDENCE_INGEST',
-    p_target_type: 'monitoring_session',
-    p_target_id: session.id,
-    p_context: { count: rows.length, device_id: device.deviceId },
+  await appendAudit(admin, {
+    actorId: null,
+    actorRole: 'SYSTEM',
+    action: 'EVIDENCE_INGEST',
+    targetType: 'monitoring_session',
+    targetId: sessionRow.id,
+    context: { count: rows.length, device_id: resolvedDevice.id },
   });
 
   return Response.json({ ok: true, accepted: rows.length }, { status: 202 });

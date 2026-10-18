@@ -22,12 +22,12 @@
     </PreferenceCategory>
 
     <PreferenceCategory
-        android:title="@string/pairing_title">
+        android:title="@string/enrollment_title">
 
         <Preference
             android:key="parental_link"
-            android:title="@string/pairing_menu_title"
-            android:summary="@string/pairing_menu_summary" />
+            android:title="@string/enrollment_menu_title"
+            android:summary="@string/enrollment_menu_summary" />
 
     </PreferenceCategory>
 

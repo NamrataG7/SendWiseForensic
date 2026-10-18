@@ -8,6 +8,7 @@ import { Pill, DummyVerifiedPill } from '@/components/Pill';
 import StatuteRef from '@/components/StatuteRef';
 import { getAuthorizationById, listAuditTail } from '@/lib/db';
 import RevokeForm from './revoke-form';
+import EnrollmentCodeForm from './enrollment-code-form';
 
 export const dynamic = 'force-dynamic';
 
@@ -296,6 +297,16 @@ export default async function AuthorizationDetailPage({
             <StatuteRef>
               Revocation is logged to the audit chain and cascades to all
               active MonitoringSessions per 2009 Rules R.11.
+            </StatuteRef>
+          </section>
+        )}
+
+        {!isTerminal && a.status === 'ACTIVE' && (
+          <section className="mt-6 flex flex-wrap items-center gap-3 border-t border-slate-200 pt-6">
+            <EnrollmentCodeForm authorizationId={a.id} />
+            <StatuteRef>
+              Codes are single-use, expire after 30 minutes, and are bound to
+              this authorization — revocation/expiry propagates automatically.
             </StatuteRef>
           </section>
         )}

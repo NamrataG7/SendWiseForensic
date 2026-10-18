@@ -40,11 +40,11 @@
             android:exported="false"
             android:label="@string/settings" />
 
-        <!-- Parental-link pairing activity -->
+        <!-- Device enrollment activity (forensic-console) -->
         <activity
-            android:name=".ui.PairingActivity"
+            android:name=".ui.EnrollmentActivity"
             android:exported="false"
-            android:label="@string/pairing_title" />
+            android:label="@string/enrollment_title" />
 
         <!-- IME Service - This is the core keyboard service -->
         <service

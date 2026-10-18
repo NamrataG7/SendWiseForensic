@@ -82,10 +82,11 @@ class SettingsActivity : AppCompatActivity() {
                 true
             }
 
-            // Parental Link -> opens PairingActivity
+            // Device Enrollment -> opens EnrollmentActivity (replaces the old
+            // parental-link pairing flow; see forensic-port.md Phase 1).
             val parentalLink = findPreference<Preference>("parental_link")
             parentalLink?.setOnPreferenceClickListener {
-                startActivity(Intent(requireContext(), PairingActivity::class.java))
+                startActivity(Intent(requireContext(), EnrollmentActivity::class.java))
                 true
             }
 

@@ -32,6 +32,11 @@ class PreferencesManager(context: Context) {
         private const val KEY_PAIRING_EXPIRES_AT = "pairing_expires_at"
         private const val KEY_IS_PAIRED = "is_paired"
 
+        // Device enrollment keys (forensic-console)
+        private const val KEY_DEVICE_ID = "device_id"
+        private const val KEY_INGEST_TOKEN = "ingest_token"
+        private const val KEY_IS_ENROLLED = "is_enrolled"
+
         // Default values
         private const val DEFAULT_MODERATION_ENABLED = true
         private const val DEFAULT_SENSITIVITY_THRESHOLD = 0.5f
@@ -232,6 +237,48 @@ class PreferencesManager(context: Context) {
         val editor = prefs.edit().putBoolean(KEY_IS_PAIRED, paired)
         if (!paired) {
             editor.remove(KEY_PAIRING_CODE).remove(KEY_PAIRING_EXPIRES_AT)
+        }
+        editor.apply()
+    }
+
+    // ----------------------------------------------------------------------
+    // Device enrollment (forensic-console)
+    // ----------------------------------------------------------------------
+
+    /** Returns the stored device ID issued by POST /api/devices/enroll, or null if none. */
+    fun getDeviceId(): String? {
+        return prefs.getString(KEY_DEVICE_ID, null)
+    }
+
+    /** Persists the device ID returned by the enrollment response. */
+    fun setDeviceId(deviceId: String) {
+        prefs.edit().putString(KEY_DEVICE_ID, deviceId).apply()
+    }
+
+    /**
+     * Returns the stored per-device ingest token (Bearer credential for
+     * future evidence-ingest submission), or null if none. This is a real
+     * security secret — never display it on screen after initial receipt.
+     */
+    fun getIngestToken(): String? {
+        return prefs.getString(KEY_INGEST_TOKEN, null)
+    }
+
+    /** Persists the raw ingest token returned (once) by the enrollment response. */
+    fun setIngestToken(token: String) {
+        prefs.edit().putString(KEY_INGEST_TOKEN, token).apply()
+    }
+
+    /** True iff this device has successfully completed enrollment. */
+    fun isEnrolled(): Boolean {
+        return prefs.getBoolean(KEY_IS_ENROLLED, false)
+    }
+
+    /** Sets the enrollment state. When un-enrolling, device ID + token are also cleared. */
+    fun setEnrolled(enrolled: Boolean) {
+        val editor = prefs.edit().putBoolean(KEY_IS_ENROLLED, enrolled)
+        if (!enrolled) {
+            editor.remove(KEY_DEVICE_ID).remove(KEY_INGEST_TOKEN)
         }
         editor.apply()
     }

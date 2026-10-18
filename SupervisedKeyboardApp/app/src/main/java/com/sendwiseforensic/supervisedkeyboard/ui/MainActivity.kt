@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var buttonEnableKeyboard: Button
     private lateinit var buttonSettings: Button
     private lateinit var buttonPrivacy: Button
+    private lateinit var buttonEnrollment: Button
     private lateinit var statusCard: CardView
     private lateinit var prefsManager: PreferencesManager
 
@@ -44,6 +45,7 @@ class MainActivity : AppCompatActivity() {
         buttonEnableKeyboard = findViewById(R.id.button_enable_keyboard)
         buttonSettings = findViewById(R.id.button_settings)
         buttonPrivacy = findViewById(R.id.button_privacy)
+        buttonEnrollment = findViewById(R.id.button_enrollment)
         statusCard = findViewById(R.id.status_card)
 
         // Set up click listeners
@@ -57,6 +59,10 @@ class MainActivity : AppCompatActivity() {
 
         buttonPrivacy.setOnClickListener {
             showPrivacyDialog()
+        }
+
+        buttonEnrollment.setOnClickListener {
+            openEnrollment()
         }
     }
 
@@ -159,6 +165,14 @@ class MainActivity : AppCompatActivity() {
      */
     private fun openSettings() {
         startActivity(Intent(this, SettingsActivity::class.java))
+    }
+
+    /**
+     * Opens the device enrollment screen (links this device to
+     * forensic-console for judicial supervision via an officer-issued code).
+     */
+    private fun openEnrollment() {
+        startActivity(Intent(this, EnrollmentActivity::class.java))
     }
 
     /**

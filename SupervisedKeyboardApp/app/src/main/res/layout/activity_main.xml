@@ -115,6 +115,15 @@
         android:text="@string/settings"
         style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
 
+    <!-- Device Enrollment Button -->
+    <Button
+        android:id="@+id/button_enrollment"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/enrollment_menu_title"
+        style="@style/Widget.MaterialComponents.Button.OutlinedButton" />
+
     <!-- Privacy Information Button -->
     <Button
         android:id="@+id/button_privacy"

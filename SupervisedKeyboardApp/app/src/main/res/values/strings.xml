@@ -69,23 +69,19 @@
     <string name="sendwise_warning_icon_content_desc">Warning</string>
     <string name="sendwise_bar_icon_content_desc">Severity indicator</string>
 
-    <!-- Parental Link / Pairing -->
-    <string name="pairing_title">Parental Link</string>
-    <string name="pairing_intro">Link this device to a parent\'s SendWise dashboard to share safety insights. No message content is ever shared.</string>
-    <string name="pairing_generate_button">Generate Pairing Code</string>
-    <string name="pairing_generating">Generating code…</string>
-    <string name="pairing_instructions">Enter this code in your parent\'s SendWise dashboard within 15 minutes.</string>
-    <string name="pairing_expires_prefix">Expires in </string>
-    <string name="pairing_expired">This code has expired. Generate a new one.</string>
-    <string name="pairing_error_network">Couldn\'t reach the SendWise server. Check your connection and try again.</string>
-    <string name="pairing_error_generic">Something went wrong generating your code.</string>
-    <string name="pairing_retry">Retry</string>
-    <string name="pairing_regenerate">Generate New Code</string>
-    <string name="pairing_paired_title">This device is linked</string>
-    <string name="pairing_paired_body">A parent dashboard is receiving anonymous safety summaries from this device.</string>
-    <string name="pairing_unlink">Unlink</string>
-    <string name="pairing_unlink_confirm_title">Unlink this device?</string>
-    <string name="pairing_unlink_confirm_body">The parent dashboard will stop receiving summaries from this device. You can re-link at any time.</string>
-    <string name="pairing_menu_title">Parental Link</string>
-    <string name="pairing_menu_summary">Link this device to a parent\'s SendWise dashboard</string>
+    <!-- Device Enrollment (forensic-console) -->
+    <string name="enrollment_title">Device Enrollment</string>
+    <string name="enrollment_intro">Enter the enrollment code issued by the authorized officer to link this device for judicial supervision.</string>
+    <string name="enrollment_code_hint">XXXX-XXXX</string>
+    <string name="enrollment_button">Enroll Device</string>
+    <string name="enrollment_enrolling">Enrolling…</string>
+    <string name="enrollment_error_empty_code">Enter the enrollment code.</string>
+    <string name="enrollment_error_network">Couldn\'t reach the forensic-console server. Check your connection and try again.</string>
+    <string name="enrollment_error_generic">Something went wrong enrolling this device.</string>
+    <string name="enrollment_retry">Retry</string>
+    <string name="enrollment_success_title">Device Enrolled</string>
+    <string name="enrollment_success_body">This device is linked for judicial supervision. Device ID: %1$s</string>
+    <string name="enrollment_menu_title">Device Enrollment</string>
+    <string name="enrollment_menu_summary">Enroll this device using an officer-issued code</string>
 </resources>
+

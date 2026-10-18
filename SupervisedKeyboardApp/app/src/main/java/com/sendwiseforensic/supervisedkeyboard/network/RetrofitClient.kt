@@ -23,8 +23,8 @@ import java.util.concurrent.TimeUnit
  *   - HTTP body logging enabled only in DEBUG builds
  *
  * API endpoints:
- *   - /api/logViolation (log violations)
- *   - /api/getStats     (retrieve user stats)
+ *   - /api/violations     (log violations — live, consumed by ViolationLogger/SafeKeyboardIME)
+ *   - /api/devices/enroll (device enrollment against forensic-console)
  */
 object RetrofitClient {
 
@@ -36,7 +36,7 @@ object RetrofitClient {
     /** Extract host portion from BASE_URL for pinning. */
     private val apiHost: String = runCatching { URI(BASE_URL).host }
         .getOrNull()
-        ?: "sendwise-lac.vercel.app"
+        ?: "CHANGEME-forensic-console.vercel.app"
 
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = if (BuildConfig.DEBUG) {
@@ -84,5 +84,5 @@ object RetrofitClient {
         .build()
 
     val apiService: ApiService = retrofit.create(ApiService::class.java)
-    val pairingApiService: PairingApiService = retrofit.create(PairingApiService::class.java)
+    val enrollmentApiService: EnrollmentApiService = retrofit.create(EnrollmentApiService::class.java)
 }

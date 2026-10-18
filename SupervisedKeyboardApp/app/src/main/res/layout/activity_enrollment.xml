@@ -1,16 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  activity_pairing.xml
+  activity_enrollment.xml
 
-  Parental-link pairing screen. Three visual states are toggled at runtime
-  by PairingActivity via View.visibility on the three containers below:
+  Device enrollment screen. Consumes an officer-issued, single-use,
+  30-minute-TTL enrollment code (format XXXX-XXXX) against
+  POST /api/devices/enroll. This device never generates/displays a code —
+  that concept belonged to the old parental-pairing flow this replaces.
 
-    * state_generate  - Idle / no unexpired code. Shows intro + generate button.
-    * state_code      - A live 6-digit code with countdown + instructions.
-    * state_paired    - Device already linked; shows unlink action.
-
-  Aesthetic matches Fig 2 SendWise card (white rounded 20dp card on soft
-  pink hero background, purple primary accents).
+  Two visual states toggled at runtime by EnrollmentActivity:
+    * state_entry    - Idle / not yet enrolled. Shows code entry + submit.
+    * state_enrolled - Device already enrolled; shows confirmation (NEVER
+                       re-displays the raw ingest token, only a truncated
+                       device ID).
 -->
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
@@ -29,7 +30,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/pairing_title"
+            android:text="@string/enrollment_title"
             android:textColor="@color/sendwise_hero_title"
             android:textSize="24sp"
             android:textStyle="bold"
@@ -44,9 +45,9 @@
             android:padding="24dp"
             android:elevation="2dp">
 
-            <!-- ==================== STATE: GENERATE ==================== -->
+            <!-- ==================== STATE: ENTRY ==================== -->
             <LinearLayout
-                android:id="@+id/state_generate"
+                android:id="@+id/state_entry"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -55,7 +56,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/pairing_menu_title"
+                    android:text="@string/enrollment_menu_title"
                     android:textColor="@color/sendwise_purple_primary"
                     android:textSize="18sp"
                     android:textStyle="bold" />
@@ -64,24 +65,39 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="@string/pairing_intro"
+                    android:text="@string/enrollment_intro"
                     android:textColor="@color/sendwise_text_secondary"
                     android:textSize="14sp"
                     android:lineSpacingExtra="2dp" />
 
+                <EditText
+                    android:id="@+id/edit_code"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="20dp"
+                    android:fontFamily="monospace"
+                    android:gravity="center"
+                    android:hint="@string/enrollment_code_hint"
+                    android:inputType="textCapCharacters"
+                    android:letterSpacing="0.1"
+                    android:maxLength="9"
+                    android:textColor="@color/sendwise_purple_deep"
+                    android:textSize="24sp"
+                    tools:text="A1B2-C3D4" />
+
                 <Button
-                    android:id="@+id/btn_generate"
+                    android:id="@+id/btn_enroll"
                     android:layout_width="match_parent"
                     android:layout_height="52dp"
                     android:layout_marginTop="20dp"
                     android:background="@drawable/bg_btn_purple_filled"
-                    android:text="@string/pairing_generate_button"
+                    android:text="@string/enrollment_button"
                     android:textColor="@color/white"
                     android:textAllCaps="false"
                     android:textSize="16sp"
                     android:textStyle="bold" />
 
-                <!-- Progress shown while POST /api/pairing/generate is in flight -->
+                <!-- Status / progress / inline error text -->
                 <LinearLayout
                     android:id="@+id/progress_container"
                     android:layout_width="match_parent"
@@ -101,83 +117,26 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:layout_marginStart="12dp"
-                        android:text="@string/pairing_generating"
+                        android:text="@string/enrollment_enrolling"
                         android:textColor="@color/sendwise_text_secondary"
                         android:textSize="14sp" />
                 </LinearLayout>
-            </LinearLayout>
-
-            <!-- ==================== STATE: CODE SHOWN ==================== -->
-            <LinearLayout
-                android:id="@+id/state_code"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:visibility="gone"
-                tools:visibility="gone">
 
                 <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="@string/pairing_menu_title"
-                    android:textColor="@color/sendwise_purple_primary"
-                    android:textSize="14sp"
-                    android:textStyle="bold"
-                    android:letterSpacing="0.08" />
-
-                <!-- 6-digit code, monospace, huge, centered -->
-                <TextView
-                    android:id="@+id/tv_code"
+                    android:id="@+id/tv_status"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="12dp"
-                    android:fontFamily="monospace"
-                    android:gravity="center"
-                    android:letterSpacing="0.15"
-                    android:text="000000"
-                    android:textColor="@color/sendwise_purple_deep"
-                    android:textSize="56sp"
-                    android:textStyle="bold"
-                    tools:text="482913" />
-
-                <!-- Countdown line -->
-                <TextView
-                    android:id="@+id/tv_countdown"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="4dp"
-                    android:gravity="center"
-                    android:text="Expires in 15:00"
-                    android:textColor="@color/sendwise_text_secondary"
+                    android:textColor="@color/sendwise_severity_high"
                     android:textSize="14sp"
-                    tools:text="Expires in 14:37" />
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginTop="16dp"
-                    android:text="@string/pairing_instructions"
-                    android:textColor="@color/sendwise_text_secondary"
-                    android:textSize="14sp"
-                    android:gravity="center"
-                    android:lineSpacingExtra="2dp" />
-
-                <Button
-                    android:id="@+id/btn_regenerate"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="24dp"
-                    android:background="@drawable/bg_btn_purple_outlined"
-                    android:text="@string/pairing_regenerate"
-                    android:textColor="@color/sendwise_purple_primary"
-                    android:textAllCaps="false"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
+                    android:visibility="gone"
+                    tools:text="Couldn't reach the forensic-console server. Check your connection and try again."
+                    tools:visibility="visible" />
             </LinearLayout>
 
-            <!-- ==================== STATE: PAIRED ==================== -->
+            <!-- ==================== STATE: ENROLLED ==================== -->
             <LinearLayout
-                android:id="@+id/state_paired"
+                android:id="@+id/state_enrolled"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="vertical"
@@ -187,31 +146,20 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="@string/pairing_paired_title"
+                    android:text="@string/enrollment_success_title"
                     android:textColor="@color/sendwise_severity_low"
                     android:textSize="18sp"
                     android:textStyle="bold" />
 
                 <TextView
+                    android:id="@+id/tv_enrolled_body"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="@string/pairing_paired_body"
                     android:textColor="@color/sendwise_text_secondary"
                     android:textSize="14sp"
-                    android:lineSpacingExtra="2dp" />
-
-                <Button
-                    android:id="@+id/btn_unlink"
-                    android:layout_width="match_parent"
-                    android:layout_height="48dp"
-                    android:layout_marginTop="20dp"
-                    android:background="@drawable/bg_btn_purple_outlined"
-                    android:text="@string/pairing_unlink"
-                    android:textColor="@color/sendwise_purple_primary"
-                    android:textAllCaps="false"
-                    android:textSize="15sp"
-                    android:textStyle="bold" />
+                    android:lineSpacingExtra="2dp"
+                    tools:text="This device is linked for judicial supervision. Device ID: a1b2c3d4…" />
             </LinearLayout>
         </LinearLayout>
 
