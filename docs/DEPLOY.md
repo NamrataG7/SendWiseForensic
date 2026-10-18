@@ -11,10 +11,10 @@
 | Name | Scope | Value |
 |---|---|---|
 | `NEXT_PUBLIC_SUPABASE_URL` | all | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | all | Supabase anon key |
-| `NEXT_PUBLIC_PROTOTYPE` | all | `true` (keeps red banner) |
+| `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | all | Supabase publishable (anon) key — `NEXT_PUBLIC_SUPABASE_ANON_KEY` also accepted as a fallback name, see `utils/supabase/client.ts` |
+| `NEXT_PUBLIC_PROTOTYPE` | all | `true` (keeps red banner + dummy-verification pills active) |
 | `SUPABASE_SECRET_KEY` | server | Service-role key (never `NEXT_PUBLIC_`) |
-| `REDIS_URL` | optional | Only if using pairing-code cache |
+| `REDIS_URL` | optional | Rate-limit counters + enrollment-code lookup caching. Falls back to an in-memory stub if unset — fine for local dev, NOT fine for a real multi-instance Vercel deployment (counters/cache reset per cold start, not shared across instances). `SENDWISE_REDIS_URL` also accepted, see `lib/redis.ts`. |
 
 ### Local run
 ```

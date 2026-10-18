@@ -19,6 +19,20 @@ Migrations are timestamp-prefixed and applied in filename order:
 | 6 | `20260831110905_audit_log.sql` | Append-only hash-chained `audit_log`, `p_append_audit()`. |
 | 7 | `20260831110906_rls_and_query_gates.sql` | RLS on `evidence`, `monitoring_session`, `authorization` with scope-rewriting policies (ENTITY_MODEL §3.4). |
 | 8 | `20260831110907_auto_expiry.sql` | `expire_authorizations()` + optional `pg_cron` schedule. |
+| 9 | `20260831120000_jurisdiction_fields.sql` | Jurisdiction fields, immutability triggers, `current_officer_jurisdictions()`, cross-jurisdiction RESTRICTIVE SELECT policies. |
+| 10 | `20260901000000_admin_enum.sql` | Admin role — enum-add-only (must run standalone before #11, same-transaction Postgres constraint). |
+| 11 | `20260901000001_admin_role_and_invitations.sql` | Admin role + officer invitation flow. |
+| 12 | `20260902000000_officer_self_read_rls.sql` | Officer + role self-read RLS policies. |
+| 13 | `20260902000100_officer_invitation_admin_rls.sql` | `officer_invitation` RLS policies reworked to match the actual schema. |
+| 14 | `20260902000200_scoped_admin_and_coapproval.sql` | Jurisdiction-scoped admins + dual-control (co-approval). |
+| 15 | `20260903000000_counsel_review_extension.sql` | Counsel access + Review Committee co-sign + warrant extension flows. |
+| 16 | `20260904000000_external_anchor_layer_l9.sql` | External anchoring layer for the audit chain. |
+| 17 | `20260904000100_extension_cap_trigger.sql` | Cap/trigger on warrant extension requests. |
+| 18 | `20260905000000_device_enrollment_enum.sql` | Device enrollment — enum-add-only (must run standalone before #19). |
+| 19 | `20260905000001_device_enrollment.sql` | `device_enrollment_code` table, `device.ingest_token_hash` — officer-issued, single-use, 30-min-TTL enrollment codes (Phase 1). |
+| 20 | `20260906000000_authorization_oversight_write.sql` | Jurisdiction-scoped UPDATE policy on `authorization` for `REVIEW_COMMITTEE`/`COMPETENT_AUTHORITY` (Phase 2 remediation — this was previously missing entirely, approve/deny UPDATEs would silently no-op under RLS). |
+| 21 | `20260906000001_extension_decide_audit_enum.sql` | `EXTENSION_APPROVE`/`EXTENSION_DENY` audit_action values — enum-add-only (Phase 2 remediation). |
+| 22 | `20260907000000_evidence_synthetic_marker.sql` | `evidence.synthetic` marker column, defaults false — distinguishes non-production pipeline-validation submissions (e.g. the Phase 3 Chrome extension) from real captured evidence; hard-blocked from legal export. |
 
 `seed.sql` inserts one dummy officer per role, tagged with the string **"PROTOTYPE — dummy identities"** in comments.
 
