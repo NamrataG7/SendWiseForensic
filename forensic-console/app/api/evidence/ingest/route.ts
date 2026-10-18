@@ -1,7 +1,6 @@
 import crypto from 'crypto';
 import { z } from 'zod';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
-import { appendAudit } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -146,18 +145,18 @@ export async function POST(req: Request) {
     synthetic: b.synthetic,
   }));
 
-  const { error } = await admin.from('evidence').insert(rows);
+  // Insert the batch + append the EVIDENCE_INGEST audit row atomically.
+  // All pre-insert validation above (bearer token, session lookup,
+  // authorization active-window re-check) is unchanged -- only the final
+  // insert+audit tail is folded into one transaction here. See
+  // 20260908000005_audit_atomicity_batch3.sql.
+  const { data: rpcResult, error } = await admin.rpc('p_evidence_ingest_batch', {
+    p_rows: rows,
+    p_session_id: sessionRow.id,
+    p_device_id: resolvedDevice.id,
+  });
   if (error) return Response.json({ error: 'insert_failed', detail: error.message }, { status: 500 });
 
-  // TODO(AUDIT-ATOMICITY): move insert + audit into a single plpgsql function.
-  await appendAudit(admin, {
-    actorId: null,
-    actorRole: 'SYSTEM',
-    action: 'EVIDENCE_INGEST',
-    targetType: 'monitoring_session',
-    targetId: sessionRow.id,
-    context: { count: rows.length, device_id: resolvedDevice.id },
-  });
-
-  return Response.json({ ok: true, accepted: rows.length }, { status: 202 });
+  const accepted = (rpcResult as { accepted?: number } | null)?.accepted ?? rows.length;
+  return Response.json({ ok: true, accepted }, { status: 202 });
 }
