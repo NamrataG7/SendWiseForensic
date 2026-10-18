@@ -3,7 +3,14 @@ import type { NextRequest } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/utils/supabase/server';
 import { appendAudit, listCasesForCurrentOfficer } from '@/lib/db';
-import { jsonError, jsonOk, requestIp, resolveCaller } from '@/lib/api';
+import {
+  jsonError,
+  jsonOk,
+  refuseIfOnlyFilterTeam,
+  requestIp,
+  requireRoleAny,
+  resolveCaller,
+} from '@/lib/api';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -43,6 +50,23 @@ export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());
   const caller = await resolveCaller(supabase);
   if (!caller.ok) return jsonError(caller.status, caller.error);
+
+  // Fix: this route previously had NO role check at all -- any
+  // authenticated officer of any role (FILTER_TEAM, DEFENSE_COUNSEL, DPO...)
+  // could open a case. Found during an emergency RLS audit alongside the
+  // missing ENABLE ROW LEVEL SECURITY on "case" itself (see
+  // 20260908000002_emergency_rls_enablement.sql). Matches the role gate
+  // already used by subjects/route.ts.
+  const notFilterOnly = refuseIfOnlyFilterTeam(caller);
+  if (!notFilterOnly.ok) {
+    return jsonError(notFilterOnly.status, notFilterOnly.error);
+  }
+  if (!requireRoleAny(caller, ['INVESTIGATING_OFFICER', 'SUPERVISING_OFFICER'])) {
+    return jsonError(
+      403,
+      'Only INVESTIGATING_OFFICER or SUPERVISING_OFFICER may open a case',
+    );
+  }
 
   let body: unknown;
   try {
