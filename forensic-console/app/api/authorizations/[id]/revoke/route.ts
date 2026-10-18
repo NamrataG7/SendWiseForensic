@@ -6,6 +6,7 @@ import { appendAudit } from '@/lib/db';
 import {
   jsonError,
   jsonOk,
+  mapRpcErrorStatus,
   requestIp,
   requireRole,
   resolveCaller,
@@ -58,38 +59,27 @@ export async function POST(
     });
   }
 
-  const { data: current, error: readErr } = await supabase
-    .from('authorization')
-    .select('id, status, case_id, revocation_log')
-    .eq('id', params.id)
-    .maybeSingle();
-  if (readErr) return jsonError(500, readErr.message);
-  if (!current) return jsonError(404, 'authorization not found');
-
-  const row = current as {
-    id: string;
-    status: string;
-    case_id: string;
-    revocation_log: Array<{ actorId: string; reason: string; at: string }>;
-  };
-  if (row.status === 'REVOKED' || row.status === 'EXPIRED') {
-    return jsonError(409, `already in terminal status ${row.status}`);
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_authorization_revoke',
+    {
+      p_authorization_id: params.id,
+      p_caller_officer_id: caller.officerId,
+      p_caller_role: caller.roles[0] ?? 'SUPERVISING_OFFICER',
+      p_reason: parsed.data.reason,
+    },
+  );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
   }
 
-  const entry = {
-    actorId: caller.officerId,
-    reason: parsed.data.reason,
-    at: new Date().toISOString(),
+  const data = result as {
+    id: string;
+    status: string;
+    revokeAuditId: number;
   };
-  const newLog = [...(row.revocation_log ?? []), entry];
 
-  const { error: updateErr } = await supabase
-    .from('authorization')
-    .update({ status: 'REVOKED', revocation_log: newLog })
-    .eq('id', params.id);
-  if (updateErr) return jsonError(500, updateErr.message);
-
-  // Cascade sessions.
+  // Cascade sessions. Not part of the atomic RPC — remains its own
+  // round-trip, as it always has.
   const { data: terminatedSessions, error: sessionErr } = await supabase
     .from('monitoring_session')
     .update({ status: 'AUTO_TERMINATED' })
@@ -97,27 +87,6 @@ export async function POST(
     .in('status', ['ACTIVE', 'PAUSED'])
     .select('id');
   if (sessionErr) return jsonError(500, sessionErr.message);
-
-  const revokeAudit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: caller.roles[0] ?? 'SUPERVISING_OFFICER',
-    action: 'AUTH_REVOKE',
-    targetType: 'authorization',
-    targetId: params.id,
-    context: { caseId: row.case_id, reason: parsed.data.reason },
-    ip: requestIp(req),
-  });
-  if (!revokeAudit.ok) {
-    // TODO(AUDIT-ATOMICITY): revert.
-    await supabase
-      .from('authorization')
-      .update({ status: row.status, revocation_log: row.revocation_log })
-      .eq('id', params.id);
-    return jsonError(
-      502,
-      `revoke reverted; audit append failed: ${revokeAudit.error}`,
-    );
-  }
 
   // Best-effort audit rows for cascaded sessions.
   const sessionIds = (terminatedSessions ?? []).map(
@@ -136,8 +105,8 @@ export async function POST(
   }
 
   return jsonOk({
-    id: params.id,
-    revokeAuditId: revokeAudit.id,
+    id: data.id,
+    revokeAuditId: data.revokeAuditId,
     terminatedSessionCount: sessionIds.length,
   });
 }

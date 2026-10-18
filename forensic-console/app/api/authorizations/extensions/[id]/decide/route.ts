@@ -1,11 +1,10 @@
 import { cookies } from 'next/headers';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { appendAudit } from '@/lib/db';
 import {
   jsonError,
   jsonOk,
-  requestIp,
+  mapRpcErrorStatus,
   requireRole,
   resolveCaller,
 } from '@/lib/api';
@@ -24,9 +23,11 @@ export const dynamic = 'force-dynamic';
  * the requested value. On deny: transitions PENDING → DENIED only; the
  * parent authorization is untouched.
  *
- * Follows the same resolveCaller/requireRole/optimistic-lock/appendAudit
- * (with compensating rollback) pattern as
- * app/api/authorizations/[id]/review/route.ts.
+ * Follows the resolveCaller/requireRole/Zod-validation pattern as other
+ * oversight routes. The core decision (status transition + expiry update +
+ * audit append) is delegated to the atomic p_extension_decide() RPC
+ * (migration 20260908000001_audit_atomicity_batch1.sql) so the mutation and
+ * its audit row commit or roll back together, in one transaction.
  *
  * Audit actions EXTENSION_APPROVE / EXTENSION_DENY (migration
  * 20260906000001_extension_decide_audit_enum.sql) — added specifically for
@@ -60,174 +61,44 @@ export async function POST(
   }
   const notes = body.notes ?? '';
 
-  const { data: current, error: readErr } = await supabase
-    .from('authorization_extension')
-    .select(
-      'id, parent_authorization_id, requested_new_expires_on, decision_status',
-    )
-    .eq('id', params.id)
-    .maybeSingle();
-  if (readErr) return jsonError(500, readErr.message);
-  if (!current) return jsonError(404, 'extension request not found');
-
-  const ext = current as {
-    id: string;
-    parent_authorization_id: string;
-    requested_new_expires_on: string;
-    decision_status: string;
-  };
-  if (ext.decision_status !== 'PENDING') {
-    return jsonError(
-      409,
-      `cannot decide from status ${ext.decision_status}; expected PENDING`,
-    );
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_extension_decide',
+    {
+      p_extension_id: params.id,
+      p_caller_officer_id: caller.officerId,
+      p_decision: decision,
+      p_reason: notes,
+    },
+  );
+  if (rpcErr) {
+    return jsonError(mapRpcErrorStatus(rpcErr.message), rpcErr.message);
   }
-
-  const { data: parentAuth, error: parentReadErr } = await supabase
-    .from('authorization')
-    .select('id, case_id, subject_id, expires_on')
-    .eq('id', ext.parent_authorization_id)
-    .maybeSingle();
-  if (parentReadErr) return jsonError(500, parentReadErr.message);
-  if (!parentAuth) return jsonError(404, 'parent authorization not found');
-
-  const parent = parentAuth as {
-    id: string;
-    case_id: string;
-    subject_id: string;
-    expires_on: string;
-  };
-  const oldExpiresOn = parent.expires_on;
 
   if (decision === 'approve') {
-    const { error: extUpdateErr } = await supabase
-      .from('authorization_extension')
-      .update({
-        decision_status: 'APPROVED',
-        decided_by: caller.officerId,
-        decided_at: new Date().toISOString(),
-        decision_reason: notes,
-      })
-      .eq('id', ext.id)
-      .eq('decision_status', 'PENDING'); // optimistic guard
-    if (extUpdateErr) return jsonError(500, extUpdateErr.message);
-
-    const { error: authUpdateErr } = await supabase
-      .from('authorization')
-      .update({ expires_on: ext.requested_new_expires_on })
-      .eq('id', parent.id)
-      .eq('expires_on', oldExpiresOn); // optimistic guard
-    if (authUpdateErr) {
-      // Revert the extension-row transition since the expiry change failed.
-      await supabase
-        .from('authorization_extension')
-        .update({
-          decision_status: 'PENDING',
-          decided_by: null,
-          decided_at: null,
-          decision_reason: null,
-        })
-        .eq('id', ext.id);
-      return jsonError(500, authUpdateErr.message);
-    }
-
-    const audit = await appendAudit(supabase, {
-      actorId: caller.officerId,
-      actorRole: 'REVIEW_COMMITTEE',
-      action: 'EXTENSION_APPROVE',
-      targetType: 'authorization_extension',
-      targetId: ext.id,
-      context: {
-        decision: 'approve',
-        caseId: parent.case_id,
-        subjectId: parent.subject_id,
-        authorizationId: parent.id,
-        oldExpiresOn,
-        newExpiresOn: ext.requested_new_expires_on,
-        notes,
-      },
-      ip: requestIp(req),
-    });
-    if (!audit.ok) {
-      // TODO(AUDIT-ATOMICITY): revert both the extension decision and the
-      // expiry change since audit failed.
-      await supabase
-        .from('authorization')
-        .update({ expires_on: oldExpiresOn })
-        .eq('id', parent.id);
-      await supabase
-        .from('authorization_extension')
-        .update({
-          decision_status: 'PENDING',
-          decided_by: null,
-          decided_at: null,
-          decision_reason: null,
-        })
-        .eq('id', ext.id);
-      return jsonError(
-        502,
-        `decision reverted; audit append failed: ${audit.error}`,
-      );
-    }
-
+    const data = result as {
+      id: string;
+      authorizationId: string;
+      oldExpiresOn: string;
+      newExpiresOn: string;
+      auditId: number;
+    };
     return jsonOk({
-      id: ext.id,
-      authorizationId: parent.id,
-      oldExpiresOn,
-      newExpiresOn: ext.requested_new_expires_on,
-      auditId: audit.id,
+      id: data.id,
+      authorizationId: data.authorizationId,
+      oldExpiresOn: data.oldExpiresOn,
+      newExpiresOn: data.newExpiresOn,
+      auditId: data.auditId,
     });
   }
 
-  // decision === 'deny'
-  const { error: denyUpdateErr } = await supabase
-    .from('authorization_extension')
-    .update({
-      decision_status: 'DENIED',
-      decided_by: caller.officerId,
-      decided_at: new Date().toISOString(),
-      decision_reason: notes,
-    })
-    .eq('id', ext.id)
-    .eq('decision_status', 'PENDING'); // optimistic guard
-  if (denyUpdateErr) return jsonError(500, denyUpdateErr.message);
-
-  const audit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: 'REVIEW_COMMITTEE',
-    action: 'EXTENSION_DENY',
-    targetType: 'authorization_extension',
-    targetId: ext.id,
-    context: {
-      decision: 'deny',
-      caseId: parent.case_id,
-      subjectId: parent.subject_id,
-      authorizationId: parent.id,
-      requestedExpiresOn: ext.requested_new_expires_on,
-      notes,
-    },
-    ip: requestIp(req),
-  });
-  if (!audit.ok) {
-    // TODO(AUDIT-ATOMICITY): revert the decision since audit failed.
-    await supabase
-      .from('authorization_extension')
-      .update({
-        decision_status: 'PENDING',
-        decided_by: null,
-        decided_at: null,
-        decision_reason: null,
-      })
-      .eq('id', ext.id);
-    return jsonError(
-      502,
-      `decision reverted; audit append failed: ${audit.error}`,
-    );
-  }
-
+  const data = result as {
+    id: string;
+    authorizationId: string;
+    auditId: number;
+  };
   return jsonOk({
-    id: ext.id,
-    authorizationId: parent.id,
-    auditId: audit.id,
+    id: data.id,
+    authorizationId: data.authorizationId,
+    auditId: data.auditId,
   });
 }

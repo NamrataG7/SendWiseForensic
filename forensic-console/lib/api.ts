@@ -164,3 +164,20 @@ export function requestIp(req: NextRequest): string | undefined {
   if (xff) return xff.split(',')[0]?.trim();
   return undefined;
 }
+
+/**
+ * Maps errors raised by the atomic `p_*` RPC functions (migration
+ * 20260908000001_audit_atomicity_batch1.sql) back to HTTP status codes.
+ *
+ * Each of those plpgsql functions RAISE EXCEPTION with a message prefixed
+ * by one of NOT_FOUND / FORBIDDEN / CONFLICT / BAD_REQUEST, by convention,
+ * so the route handlers can map consistently without re-parsing Postgres
+ * SQLSTATE codes. Falls back to 500 for anything unrecognised.
+ */
+export function mapRpcErrorStatus(message: string): number {
+  if (message.startsWith('NOT_FOUND:')) return 404;
+  if (message.startsWith('FORBIDDEN:')) return 403;
+  if (message.startsWith('CONFLICT:')) return 409;
+  if (message.startsWith('BAD_REQUEST:')) return 400;
+  return 500;
+}
