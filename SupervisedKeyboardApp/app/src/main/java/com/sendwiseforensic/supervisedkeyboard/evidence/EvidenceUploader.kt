@@ -9,6 +9,7 @@ import com.sendwiseforensic.supervisedkeyboard.BuildConfig
 import com.sendwiseforensic.supervisedkeyboard.SupervisedKeyboardApplication
 import com.sendwiseforensic.supervisedkeyboard.attestation.AttestationPayload
 import com.sendwiseforensic.supervisedkeyboard.attestation.DeviceAttestation
+import com.sendwiseforensic.supervisedkeyboard.utils.PreferencesManager
 import com.sendwiseforensic.supervisedkeyboard.utils.UserIdGenerator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -26,13 +27,18 @@ import java.net.URL
  *   - Kicked off after every [EvidenceRecorder.record].
  *   - Backoff on 5xx / network via WorkManager exponential retry.
  *   - 4xx (except 401) is treated as terminal for the row (dead-letter).
- *   - 401 is transient (auth stub not wired yet); bumps attempt counter.
+ *   - 401 means the stored ingest token was rejected (revoked/rotated/
+ *     device re-enrolled elsewhere) — bumps attempt counter and retries;
+ *     a stuck 401 loop needs re-enrollment, not just backoff
+ *     (TODO(INGEST-TOKEN-REFRESH): no automatic recovery path yet).
  *   - 200 marks the row uploaded.
  *
- * TODO(WIRE-TO-FORENSIC-CONSOLE) authentication, request signing, and
- * server-side signature verification are stubs. This uploader posts JSON
- * to a placeholder host and relies on device-side signatures embedded in
- * the payload — no session token, no mutual TLS.
+ * Authenticates with the per-device ingest token issued once by
+ * POST /api/devices/enroll (see PreferencesManager.getIngestToken()) as a
+ * Bearer credential. If no token is stored yet (device not enrolled, or
+ * enrollment response was lost), the worker retries without attempting a
+ * network call — an unauthenticated request would only ever receive a
+ * terminal 401 from the Phase-1 ingest route, which requires this token.
  */
 class EvidenceUploader(
     context: Context,
@@ -48,6 +54,12 @@ class EvidenceUploader(
             val batch = dao.pendingBatches(BATCH_LIMIT)
             if (batch.isEmpty()) return@withContext Result.success()
 
+            val ingestToken = PreferencesManager(applicationContext).getIngestToken()
+            if (ingestToken.isNullOrBlank()) {
+                Log.w(TAG, "no ingest token stored yet; device not enrolled — retrying later")
+                return@withContext Result.retry()
+            }
+
             val attestation = DeviceAttestation.check()
             val deviceId = try {
                 UserIdGenerator.getAnonymousUserId(applicationContext)
@@ -61,7 +73,7 @@ class EvidenceUploader(
                 deviceId = deviceId,
                 attestation = attestation,
             )
-            val (code, errorMsg) = postJson(body)
+            val (code, errorMsg) = postJson(body, ingestToken)
 
             when {
                 code in 200..299 -> {
@@ -141,7 +153,7 @@ class EvidenceUploader(
             .toString()
     }
 
-    private fun postJson(body: String): Pair<Int, String?> {
+    private fun postJson(body: String, ingestToken: String): Pair<Int, String?> {
         val url = URL("${BuildConfig.BACKEND_URL}/api/evidence/ingest")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
@@ -149,6 +161,7 @@ class EvidenceUploader(
             connectTimeout = 15_000
             readTimeout = 30_000
             setRequestProperty("Content-Type", "application/json")
+            setRequestProperty("Authorization", "Bearer $ingestToken")
         }
         return try {
             conn.outputStream.use { it.write(body.toByteArray()) }
