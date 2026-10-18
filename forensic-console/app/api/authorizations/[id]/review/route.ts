@@ -15,13 +15,15 @@ export const dynamic = 'force-dynamic';
 /**
  * POST /api/authorizations/[id]/review
  *
- * Review Committee approval (single-user stub for the prototype).
- * Transitions PENDING_REVIEW → ACTIVE and appends AUTH_APPROVE +
- * AUTH_ACTIVATE audit entries.
- *
- * TODO(REVIEW-COMMITTEE-QUORUM): production requires the full quorum
- * (Cabinet Secretary + Secretary Legal + Secretary Telecom for Union,
- * equivalents for State). Prototype records a single approver.
+ * Review Committee approval. For non-IN jurisdictions (US/UK), a single
+ * REVIEW_COMMITTEE approver immediately transitions PENDING_REVIEW →
+ * ACTIVE (appending AUTH_APPROVE + AUTH_ACTIVATE audit entries), as
+ * before. For IN, the RPC now enforces real 3-seat Review Committee
+ * quorum (Cabinet Secretary + Secretary Legal + Secretary Telecom): each
+ * call accumulates the caller's seat into review_committee_approval and
+ * only activates once all 3 seats are present. Until quorum is met, the
+ * RPC returns a partial-approval shape instead of the activation shape —
+ * both are surfaced here as-is.
  */
 export async function POST(
   req: NextRequest,
@@ -57,12 +59,30 @@ export async function POST(
   const data = result as {
     id: string;
     status: string;
-    approvalAuditId: number;
-    activateAuditId: number;
+    quorumMet?: boolean;
+    approvalAuditId?: number;
+    activateAuditId?: number;
+    seatsPresent?: string[];
+    seatsMissing?: string[];
+    approverCount?: number;
   };
+
+  if (data.status === 'PENDING_REVIEW' && data.quorumMet === false) {
+    // IN-jurisdiction partial approval: quorum not yet met.
+    return jsonOk({
+      id: data.id,
+      status: data.status,
+      quorumMet: false,
+      seatsPresent: data.seatsPresent ?? [],
+      seatsMissing: data.seatsMissing ?? [],
+      approverCount: data.approverCount ?? 0,
+    });
+  }
 
   return jsonOk({
     id: data.id,
+    status: data.status,
+    quorumMet: data.quorumMet ?? true,
     approvalAuditId: data.approvalAuditId,
     activateAuditId: data.activateAuditId,
   });
