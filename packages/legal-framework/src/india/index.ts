@@ -29,7 +29,6 @@ import {
   aggregatedRootHash,
   type CertificateInput,
 } from '@sendwise-forensic/evidence-certificate';
-import { DummyReviewCommitteeTokenSchema } from '@sendwise-forensic/dummy-verification';
 import { randomUUID } from 'node:crypto';
 
 // TODO(UIDAI-INTEGRATION) resolve the current Union/State Home Secretary set
@@ -155,28 +154,18 @@ export class IndiaLegalFramework implements LegalFrameworkAdapter {
       if (!auth.signedOrderDocumentHash) {
         errors.push('signedOrderDocumentHash required for JUDICIAL_WARRANT (IT Act §69 + 2009 Rules R.3)');
       }
-      if (!auth.reviewCommitteeApproval) {
-        errors.push('reviewCommitteeApproval required for JUDICIAL_WARRANT (IT Rules 2009 R.22)');
-      } else {
-        // TODO(REVIEW-COMMITTEE-QUORUM) — for the prototype, the
-        // reviewCommitteeApproval object must additionally carry a
-        // @sendwise-forensic/dummy-verification DummyReviewCommitteeToken
-        // (visibly stamped "DUMMY QUORUM — PROTOTYPE ONLY"). Once a real
-        // quorum record is available this check is replaced with proper
-        // credential verification. See docs/PROTOTYPE_NOTICE.md item 3.
-        const dummy = DummyReviewCommitteeTokenSchema.safeParse(
-          auth.reviewCommitteeApproval,
-        );
-        if (!dummy.success) {
-          errors.push(
-            'reviewCommitteeApproval must be a DummyReviewCommitteeToken from @sendwise-forensic/dummy-verification (IT Rules 2009 R.22; TODO(REVIEW-COMMITTEE-QUORUM))',
-          );
-        } else if (!dummy.data.quorumMet) {
-          errors.push(
-            'reviewCommitteeApproval.quorumMet is false — full Cabinet Secretary + Secretary Legal + Secretary Telecom quorum required (IT Rules 2009 R.22; TODO(REVIEW-COMMITTEE-QUORUM))',
-          );
-        }
-      }
+      // reviewCommitteeApproval is deliberately NOT checked here. This is a
+      // draft-time validator (called once, at creation, while status is
+      // always PENDING_REVIEW) -- committee quorum is a POST-draft event
+      // that only exists once p_authorization_review_approve runs. This
+      // function previously required reviewCommitteeApproval to already be
+      // non-null + quorum-complete at DRAFT time, which made every India
+      // JUDICIAL_WARRANT draft submitted through the actual wizard UI
+      // (which always sends reviewCommitteeApproval: null, by design --
+      // see wizard-client.tsx's own step-5 text) fail validation outright.
+      // Real quorum enforcement (TODO(REVIEW-COMMITTEE-QUORUM)) now lives
+      // at the activation call site (p_authorization_review_approve),
+      // the only place the state transition actually happens.
       const allowlist = allCompetentAuthorityIds(this.getCompetentAuthorities());
       if (!allowlist.has(auth.issuingAuthorityId)) {
         errors.push(

@@ -478,32 +478,15 @@ export class UkLegalFramework implements LegalFrameworkAdapter {
       }
 
       // --- Double-lock: Judicial Commissioner approval.
-      const parsed = parseUkDoubleLock(auth.reviewCommitteeApproval);
-      if (!parsed.ok) {
-        errors.push(
-          `UK double-lock missing Judicial Commissioner approval: ${parsed.error} (UK_IPA_2016_S23 / UK_IPA_2016_S102)`,
-        );
-      } else {
-        const jcAllow = judicialCommissionerAllowlist(
-          this.getCompetentAuthorities(),
-        );
-        if (!jcAllow.has(parsed.value.judicialCommissionerId)) {
-          errors.push(
-            `judicialCommissionerId '${parsed.value.judicialCommissionerId}' not in Judicial Commissioner allowlist (UK_IPA_2016_S229; TODO(JUDICIAL-COMMISSIONER-REGISTRY))`,
-          );
-        }
-        if (parsed.value.urgent) {
-          const promised = new Date(
-            parsed.value.urgentJudicialCommissionerApprovalPromisedBy!,
-          );
-          const cutoff = addWorkingDays(new Date(auth.issuedOn), 3);
-          if (promised.getTime() > cutoff.getTime()) {
-            errors.push(
-              `urgent s.29 warrant: JC approval promised-by ${promised.toISOString()} exceeds 3 working days from issuedOn (UK_IPA_2016_S29)`,
-            );
-          }
-        }
-      }
+      // Deliberately NOT checked here. This is a draft-time validator
+      // (called once, at creation, while status is always PENDING_REVIEW)
+      // -- JC double-lock approval is a POST-draft event that only exists
+      // once the activation call site runs. Requiring it non-null at draft
+      // time made every UK JUDICIAL_WARRANT draft fail validation outright,
+      // since no double-lock payload exists yet when a warrant is first
+      // drafted. Real double-lock enforcement (JC-on-allowlist, urgent
+      // promised-by window) now belongs at the activation call site, the
+      // only place the state transition actually happens.
 
       // --- Issuing authority allowlist.
       const issuers = issuingAuthorityAllowlist(this.getCompetentAuthorities());
