@@ -82,7 +82,7 @@ export type DataCategory =
   | 'COMMS_METADATA'
   | 'RISK_DETECTION';
 
-export type DevicePlatform = 'ANDROID';
+export type DevicePlatform = 'ANDROID' | 'CHROME_EXTENSION';
 export type DeviceStatus = 'ENROLLED' | 'UNINSTALLED' | 'TAMPERED';
 
 export type MonitoringSessionStatus =

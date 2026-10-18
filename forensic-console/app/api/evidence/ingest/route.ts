@@ -22,6 +22,12 @@ const BatchSchema = z.object({
   privilegeFlag: z.enum(['NONE', 'LEGAL', 'MEDICAL', 'CLERGY', 'SPOUSAL', 'UNKNOWN']),
   contextAppPackage: z.string().nullable().optional(),
   signatureBase64: z.string(),
+  // Defaults false so the existing Android client (unaware of this field)
+  // is unaffected. Must be true for non-production pipeline-validation
+  // submissions (e.g. the Phase 3 Chrome extension's placeholder-input
+  // cycle) that do not reflect real captured activity -- see migration
+  // 20260907000000_evidence_synthetic_marker.sql.
+  synthetic: z.boolean().optional().default(false),
 });
 
 const IngestSchema = z.object({
@@ -137,6 +143,7 @@ export async function POST(req: Request) {
     payload_ref: null,
     device_signature: b.signatureBase64,
     quarantine_status: b.privilegeFlag === 'NONE' ? null : 'PENDING_FILTER',
+    synthetic: b.synthetic,
   }));
 
   const { error } = await admin.from('evidence').insert(rows);

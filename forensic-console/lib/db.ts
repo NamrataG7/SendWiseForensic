@@ -409,6 +409,7 @@ export interface EvidenceMetadataRow {
   privilegeFlag: PrivilegeFlagDb;
   quarantineStatus: QuarantineStatusDb | null;
   createdAt: Date;
+  synthetic: boolean;
 }
 
 interface EvidenceRowRaw {
@@ -421,6 +422,7 @@ interface EvidenceRowRaw {
   privilege_flag: PrivilegeFlagDb;
   quarantine_status: QuarantineStatusDb | null;
   created_at: string;
+  synthetic: boolean;
 }
 
 function toEvidenceMetadata(r: EvidenceRowRaw): EvidenceMetadataRow {
@@ -434,6 +436,7 @@ function toEvidenceMetadata(r: EvidenceRowRaw): EvidenceMetadataRow {
     privilegeFlag: r.privilege_flag,
     quarantineStatus: r.quarantine_status,
     createdAt: new Date(r.created_at),
+    synthetic: r.synthetic,
   };
 }
 
@@ -450,7 +453,7 @@ export async function listEvidenceMetadataForCase(
   const { data, error } = await supabase
     .from('evidence')
     .select(
-      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, monitoring_session:session_id!inner(authorization:authorization_id!inner(case_id))',
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, synthetic, monitoring_session:session_id!inner(authorization:authorization_id!inner(case_id))',
     )
     .eq('monitoring_session.authorization.case_id', caseId)
     .or('quarantine_status.is.null,quarantine_status.eq.RELEASED')
@@ -474,7 +477,7 @@ export async function getEvidenceByIds(
   const { data, error } = await supabase
     .from('evidence')
     .select(
-      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at',
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, synthetic',
     )
     .in('id', ids);
   if (error || !data) return [];
@@ -503,7 +506,7 @@ export async function listFilterTeamQueue(
   const { data, error } = await supabase
     .from('evidence')
     .select(
-      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at',
+      'id, session_id, category, captured_at, payload_hash, prev_evidence_hash, privilege_flag, quarantine_status, created_at, synthetic',
     )
     .eq('quarantine_status', 'PENDING_FILTER')
     .order('created_at', { ascending: true })
@@ -710,7 +713,7 @@ export async function getMonitoringSessionById(
 export interface DeviceRecord {
   id: string;
   subjectId: string;
-  platform: 'ANDROID';
+  platform: 'ANDROID' | 'CHROME_EXTENSION';
   deviceFingerprint: string;
   hardwareBackedPubKey: string | null;
 }
@@ -737,7 +740,7 @@ export async function getDeviceById(
   return {
     id: r.id,
     subjectId: r.subject_id,
-    platform: 'ANDROID',
+    platform: r.platform === 'CHROME_EXTENSION' ? 'CHROME_EXTENSION' : 'ANDROID',
     deviceFingerprint: r.device_fingerprint,
     hardwareBackedPubKey: r.hardware_backed_pub_key,
   };

@@ -10,7 +10,7 @@ const EnrollInputSchema = z
   .object({
     code: z.string().min(1),
     deviceFingerprint: z.string().min(1),
-    platform: z.literal('ANDROID').default('ANDROID'),
+    platform: z.enum(['ANDROID', 'CHROME_EXTENSION']).default('ANDROID'),
     hardwareBackedPubKey: z.string().nullable().optional(),
   })
   .strict();

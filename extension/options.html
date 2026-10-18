@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--
+  Officer-only enrollment screen. Never shown to, or intended for, the
+  monitored subject -- this extension has no content_scripts and no
+  user-visible surface on any web page. This page is only reachable via
+  chrome://extensions "Options" for whoever installs the extension on the
+  authorized collection device/profile.
+-->
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>SendWise Forensic - Device Enrollment</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: 1rem; font-weight: 600; }
+    input { width: 100%; box-sizing: border-box; padding: 0.5rem; margin-top: 0.25rem; font-size: 1rem; }
+    button { margin-top: 1.5rem; padding: 0.6rem 1.2rem; font-size: 1rem; cursor: pointer; }
+    #status { margin-top: 1rem; font-weight: 600; }
+    #status.ok { color: #116329; }
+    #status.err { color: #b42318; }
+  </style>
+</head>
+<body>
+  <h2>Device Enrollment</h2>
+  <p>Enter the forensic-console base URL and the single-use enrollment code issued for this authorization.</p>
+
+  <label for="dashboard-url">Forensic console URL</label>
+  <input id="dashboard-url" type="text" placeholder="https://console.example.org" autocomplete="off" />
+
+  <label for="enroll-code">Enrollment code</label>
+  <input id="enroll-code" type="text" placeholder="XXXX-XXXX" autocomplete="off" />
+
+  <button id="enroll-btn">Enroll Device</button>
+
+  <div id="status"></div>
+
+  <script src="lib/signing.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

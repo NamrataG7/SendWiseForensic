@@ -112,6 +112,21 @@ export async function POST(
     );
   }
 
+  // Synthetic rows (e.g. the Phase 3 Chrome extension's placeholder-input
+  // pipeline-validation submissions) must never reach a court-facing BSA §63
+  // certificate -- they do not reflect real captured activity. Hard reject
+  // rather than silently filter, mirroring the quarantine check above: an
+  // export request naming a synthetic row is treated as an error to
+  // surface, not a case to quietly work around.
+  const synthetic = evidence.filter((e) => e.synthetic);
+  if (synthetic.length > 0) {
+    return jsonError(
+      409,
+      'evidence set contains synthetic (non-production pipeline-validation) rows; these can never be included in a legal export',
+      { syntheticIds: synthetic.map((e) => e.id) },
+    );
+  }
+
   // 3) Verify hash chain (per-session ordering: rows must share sessionId,
   //    or be presented in an order where each row's prev_evidence_hash links
   //    to the previous row's payload hash). We assemble HashChainEntries
@@ -224,9 +239,16 @@ export async function POST(
     },
     device: {
       deviceId: device.id,
-      platform: 'ANDROID' as const,
+      // device.platform now carries a real value per device (ANDROID or
+      // CHROME_EXTENSION, Phase 3) -- was previously hardcoded to ANDROID
+      // unconditionally, which would have produced a false chain-of-custody
+      // certificate for any non-Android device. Certificate schema's
+      // PlatformEnum ('ANDROID'|'IOS'|'DESKTOP'|'OTHER') has no dedicated
+      // CHROME_EXTENSION value; DESKTOP is the closest accurate label for a
+      // browser-extension-based collection agent.
+      platform: device.platform === 'CHROME_EXTENSION' ? 'DESKTOP' as const : 'ANDROID' as const,
       model: 'UNKNOWN',
-      os: 'ANDROID',
+      os: device.platform === 'CHROME_EXTENSION' ? 'CHROME_OS_OR_DESKTOP_BROWSER' : 'ANDROID',
       deviceFingerprint: device.deviceFingerprint,
       hardwareBackedPubKeyHex: device.hardwareBackedPubKey ?? undefined,
     },

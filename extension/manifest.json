@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "SendWise Forensic Collection Agent",
+  "version": "0.1.0",
+  "description": "Judicial/warrant-authorized forensic evidence collection agent (officer-enrolled device). No content scripts, no user-visible UI on monitored surfaces.",
+  "permissions": ["storage", "alarms"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html"
+}
