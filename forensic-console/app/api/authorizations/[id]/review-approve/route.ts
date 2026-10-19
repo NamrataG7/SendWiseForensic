@@ -1,6 +1,7 @@
 import { cookies } from 'next/headers';
 import { createClient } from '@/utils/supabase/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
+import { appendAudit } from '@/lib/db';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -36,6 +37,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       review_approved_by: me.id,
       review_approved_at: new Date().toISOString(),
     }).eq('id', params.id);
+    await appendAudit(admin, {
+      actorId: me.id,
+      actorRole: 'REVIEW_COMMITTEE',
+      action: 'AUTH_APPROVE',
+      targetType: 'authorization',
+      targetId: params.id,
+      context: { kind: 'R22_PERIODIC_REVIEW', decision: 'approve' },
+    });
   } else if (action === 'reject') {
     await admin.from('authorization').update({
       review_status: 'REJECTED',
@@ -44,6 +53,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       review_reject_reason: reason,
       status: 'REVOKED',
     }).eq('id', params.id);
+    await appendAudit(admin, {
+      actorId: me.id,
+      actorRole: 'REVIEW_COMMITTEE',
+      action: 'AUTH_REVOKE',
+      targetType: 'authorization',
+      targetId: params.id,
+      context: { kind: 'R22_PERIODIC_REVIEW', decision: 'reject', reason },
+    });
   } else {
     return Response.json({ error: 'invalid_action' }, { status: 400 });
   }
