@@ -5,17 +5,16 @@ import { useRouter } from 'next/navigation';
 
 /**
  * File-objection form used inside the counsel portal.
- * Posts to POST /api/counsel/objections — the route re-validates and
- * appends SUBJECT_OBJECTION_FILED to the audit chain.
+ * Posts to POST /api/counsel/objections — the route resolves the
+ * caller's identity from the authenticated Supabase session (real
+ * magic-link login), re-validates the GRANTED counsel_access_request
+ * scope, and appends SUBJECT_OBJECTION_FILED to the audit chain. No
+ * client-supplied token/officer-id is sent (P1.4 fix).
  */
 export default function ObjectionForm({
   authorizationId,
-  magicLinkToken,
-  counselOfficerId,
 }: {
   authorizationId: string;
-  magicLinkToken: string;
-  counselOfficerId: string;
 }) {
   const router = useRouter();
   const [grounds, setGrounds] = useState('');
@@ -37,8 +36,6 @@ export default function ObjectionForm({
           body: JSON.stringify({
             authorizationId,
             grounds,
-            magicLinkToken,
-            filedByCounselOfficerId: counselOfficerId,
           }),
         });
         const body = (await res.json().catch(() => ({}))) as {
