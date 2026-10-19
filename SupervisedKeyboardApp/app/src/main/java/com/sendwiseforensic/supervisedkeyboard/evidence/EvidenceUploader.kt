@@ -78,6 +78,16 @@ class EvidenceUploader(
             when {
                 code in 200..299 -> {
                     for (row in batch) dao.markUploaded(row.batchId)
+                    // Ack-then-advance: only now, after a confirmed 2xx,
+                    // do we advance EvidenceRecorder's in-memory chain
+                    // tail. batch is ASC-ordered by captured_at
+                    // (EvidenceStore.pendingBatches), so the last row per
+                    // sessionId is that session's chain tip in this batch.
+                    batch.groupBy { it.sessionId }
+                        .forEach { (sessionId, rows) ->
+                            val tip = rows.last()
+                            EvidenceRecorder.advanceTailAfterAck(sessionId, tip.batchHashHex)
+                        }
                     Result.success()
                 }
                 code == 401 -> {

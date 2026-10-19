@@ -126,7 +126,18 @@ object EvidenceRecorder {
                 )
                 // COLLECTION_GATE_ONLY — insert into the local spool.
                 EvidenceStore.get(appContext).evidenceDao().insert(row)
-                advanceTail(active.sessionId, batchHashHex)
+                // NOTE: the in-memory tail is NOT advanced here. Advancing
+                // before the server has actually accepted this batch would
+                // be "advance-then-send": if the batch is never
+                // successfully uploaded (crash, offline, dead process
+                // between insert and upload), every subsequent batch would
+                // still chain from a hash the server never saw — a
+                // permanently broken chain, discoverable only at
+                // evidentiary review time. See advanceTailAfterAck() below,
+                // called by EvidenceUploader ONLY after a confirmed 2xx
+                // response — ack-then-advance, matching the Chrome
+                // extension's (Phase 3) correct implementation of this
+                // same pattern.
                 enqueueUploadWorker()
             } catch (t: Throwable) {
                 Log.e(TAG, "record failed: ${t.message}", t)
@@ -163,7 +174,12 @@ object EvidenceRecorder {
         return EvidenceBatch.GENESIS_PREV_HASH_HEX
     }
 
-    private fun advanceTail(sessionId: String, newHashHex: String) {
+    /**
+     * Ack-then-advance: call ONLY after EvidenceUploader has received a
+     * confirmed 2xx response for the batch(es) ending in [newHashHex] for
+     * [sessionId]. Never call speculatively before upload succeeds.
+     */
+    fun advanceTailAfterAck(sessionId: String, newHashHex: String) {
         sessionTailHash.set(sessionId to newHashHex)
     }
 
