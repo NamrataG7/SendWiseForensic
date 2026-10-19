@@ -215,7 +215,14 @@ export async function POST(
   const nowIso = new Date().toISOString();
   const hashes = evidence.map((e) => e.payloadHash);
   const certificateInput = {
-    certificateId: `bsa63-${params.id}`,
+    // certificateId must be a bare UUID per CertificateInputSchema (the
+    // export's own id already uniquely identifies the certificate; the
+    // "bsa63" naming convention lives in certRef's file path below, not
+    // here). Previously this was `bsa63-${params.id}`, which is NOT a
+    // valid UUID and failed CertificateInputSchema's regex on every
+    // single generation attempt -- confirmed live: "certificate render
+    // failed: BSA §63 certificate input failed schema validation".
+    certificateId: params.id,
     issuedAt: nowIso,
     issuedBy: {
       officerId: signingOfficer.id,
