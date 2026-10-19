@@ -28,7 +28,7 @@ export const dynamic = 'force-dynamic';
 
 function authTone(status: AuthorizationStatus): 'success' | 'warning' | 'muted' {
   if (status === 'ACTIVE') return 'success';
-  if (status === 'REVOKED' || status === 'SUSPENDED') return 'warning';
+  if (status === 'REVOKED' || status === 'SUSPENDED' || status === 'REJECTED') return 'warning';
   return 'muted';
 }
 

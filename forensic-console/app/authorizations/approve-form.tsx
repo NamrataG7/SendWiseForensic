@@ -4,20 +4,15 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
- * Approve button for a PENDING_REVIEW authorization. Mirrors RevokeForm's
- * structure/conventions. Posts to the house-standard
+ * Approve/reject buttons for a PENDING_REVIEW authorization. Mirrors
+ * RevokeForm's structure/conventions. Posts to the house-standard
  * /api/authorizations/[id]/review route.
  *
- * NOTE(SCOPE): /api/authorizations/[id]/review only implements approval —
- * it unconditionally transitions PENDING_REVIEW → ACTIVE on POST and has
- * no reject/deny branch (unlike the extension-decide route). There is no
- * "reject initial issuance" endpoint anywhere in the API surface. This
- * phase's design doc assumed an approve|reject body shape; building a
- * reject button that silently calls the same unconditional-approve route
- * would be worse than not offering rejection at all, so this form only
- * offers Approve. Flagged as a deviation — a reject/deny endpoint for
- * initial issuance is a separate follow-up (out of scope here; no
- * backend change was authorised for this route this phase).
+ * P1.1 (previously a documented gap): the reject path now exists
+ * (p_authorization_review_reject, 20260909000001) -- a single
+ * REVIEW_COMMITTEE member's decision, in every jurisdiction, requiring a
+ * non-empty reason. Transitions PENDING_REVIEW -> REJECTED (terminal,
+ * distinct from REVOKED: this warrant never activated at all).
  */
 export default function ApproveForm({
   authorizationId,
@@ -25,15 +20,24 @@ export default function ApproveForm({
   authorizationId: string;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState<'approve' | 'reject' | null>(null);
   const [notes, setNotes] = useState('');
+  const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
-    if (!confirm('Approve this authorization? It will transition to ACTIVE.')) {
+    if (open === 'reject') {
+      if (reason.trim().length === 0) {
+        setError('A reason is required to reject.');
+        return;
+      }
+      if (!confirm('Reject this authorization? It will transition to REJECTED and can never be activated.')) {
+        return;
+      }
+    } else if (!confirm('Approve this authorization? It will transition to ACTIVE.')) {
       return;
     }
     startTransition(async () => {
@@ -43,7 +47,9 @@ export default function ApproveForm({
           {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ notes }),
+            body: JSON.stringify(
+              open === 'reject' ? { action: 'reject', reason } : { action: 'approve', notes },
+            ),
           },
         );
         const body = (await res.json().catch(() => ({}))) as {
@@ -54,7 +60,7 @@ export default function ApproveForm({
           setError(body.error ?? `Request failed (${res.status})`);
           return;
         }
-        setOpen(false);
+        setOpen(null);
         router.refresh();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Network error');
@@ -64,36 +70,67 @@ export default function ApproveForm({
 
   if (!open) {
     return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="border border-success bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-success hover:bg-green-50"
-      >
-        Approve
-      </button>
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setOpen('approve')}
+          className="border border-success bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-success hover:bg-green-50"
+        >
+          Approve
+        </button>
+        <button
+          type="button"
+          onClick={() => setOpen('reject')}
+          className="border border-warning bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-warning hover:bg-red-50"
+        >
+          Reject
+        </button>
+      </div>
     );
   }
 
   return (
     <form onSubmit={onSubmit} className="flex flex-1 flex-wrap items-center gap-3">
-      <input
-        name="notes"
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
-        placeholder="Notes (optional)"
-        className="min-w-[240px] flex-1 border border-slate-300 px-3 py-2 text-sm focus:border-success focus:outline-none"
-      />
+      {open === 'reject' ? (
+        <input
+          name="reason"
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="Reason (required)"
+          required
+          minLength={3}
+          className="min-w-[240px] flex-1 border border-slate-300 px-3 py-2 text-sm focus:border-warning focus:outline-none"
+        />
+      ) : (
+        <input
+          name="notes"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+          placeholder="Notes (optional)"
+          className="min-w-[240px] flex-1 border border-slate-300 px-3 py-2 text-sm focus:border-success focus:outline-none"
+        />
+      )}
       <button
         type="submit"
         disabled={isPending}
-        className="border border-success bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-success hover:bg-green-50 disabled:opacity-50"
+        className={
+          open === 'reject'
+            ? 'border border-warning bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-warning hover:bg-red-50 disabled:opacity-50'
+            : 'border border-success bg-white px-4 py-2 text-xs font-semibold uppercase tracking-register text-success hover:bg-green-50 disabled:opacity-50'
+        }
       >
-        {isPending ? 'Approving…' : 'Confirm approval'}
+        {isPending
+          ? open === 'reject'
+            ? 'Rejecting…'
+            : 'Approving…'
+          : open === 'reject'
+            ? 'Confirm rejection'
+            : 'Confirm approval'}
       </button>
       <button
         type="button"
         onClick={() => {
-          setOpen(false);
+          setOpen(null);
           setError(null);
         }}
         disabled={isPending}

@@ -28,6 +28,7 @@ export enum AuthorizationStatus {
   SUSPENDED = 'SUSPENDED',
   EXPIRED = 'EXPIRED',
   REVOKED = 'REVOKED',
+  REJECTED = 'REJECTED',
 }
 
 export enum DataCategory {

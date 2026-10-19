@@ -32,7 +32,7 @@ export default async function AuthorizationDetailPage({
     limit: 50,
   });
 
-  const isTerminal = a.status === 'REVOKED' || a.status === 'EXPIRED';
+  const isTerminal = a.status === 'REVOKED' || a.status === 'EXPIRED' || a.status === 'REJECTED';
   const scope = a.scope ?? {
     dataCategories: [],
     devices: [],

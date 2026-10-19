@@ -44,7 +44,8 @@ export type AuthorizationStatus =
   | 'ACTIVE'
   | 'SUSPENDED'
   | 'EXPIRED'
-  | 'REVOKED';
+  | 'REVOKED'
+  | 'REJECTED';
 
 /**
  * Legitimate aims across jurisdictions. IT Act §69 (IN),
