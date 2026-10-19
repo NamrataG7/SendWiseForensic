@@ -52,7 +52,7 @@ export default function OnboardingClient({
         <p className="mt-1 text-sm text-warning">
           Your home jurisdiction determines which cases you can access by
           default. Changes require an administrative grant.
-          TODO(SUPPORT-HOME-JURISDICTION-CHANGE-VIA-ADMIN).
+          An admin can now grant cross-jurisdiction access via /admin (P1.3).
         </p>
       </div>
 

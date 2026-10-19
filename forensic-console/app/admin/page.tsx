@@ -3,6 +3,8 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/utils/supabase/server';
 import TopNav from '@/components/TopNav';
+import JurisdictionGrantForm from './jurisdiction-grant-form';
+import RevokeJurisdictionGrantButton from './revoke-jurisdiction-grant-button';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -104,6 +106,18 @@ export default async function AdminHomePage() {
   });
   const pendingSend = sentRes.data ?? [];
   const invitationsErr = coRes.error || sentRes.error;
+
+  const grantsRes = await safe(async () => {
+    const q = await supabase
+      .from('officer_jurisdiction_grant')
+      .select('officer_id, reason, granted_at')
+      .eq('jurisdiction', myJurisdiction)
+      .is('revoked_at', null)
+      .order('granted_at', { ascending: false });
+    if (q.error) throw q.error;
+    return q.data ?? [];
+  });
+  const activeGrants = grantsRes.data ?? [];
 
   return renderShell(
     <>
@@ -289,6 +303,50 @@ export default async function AdminHomePage() {
                 <tr>
                   <td className="py-6 px-4 text-center text-slate-500" colSpan={5}>
                     No pending sent invitations.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="mb-12">
+        <h2 className="text-sm uppercase tracking-widest text-slate-500 mb-3">
+          Cross-jurisdiction grants — into {myJurisdiction}
+        </h2>
+        <p className="text-xs text-slate-500 mb-2">
+          Grants an officer (any home jurisdiction) read access to {myJurisdiction} cases/authorizations/evidence
+          (officer_jurisdiction_grant) — e.g. MLAT liaison. Rare; most officers never need this.
+        </p>
+        <div className="mb-4 border border-slate-200 bg-slate-50 p-4">
+          <JurisdictionGrantForm jurisdiction={myJurisdiction} />
+        </div>
+        <div className="border border-slate-200 bg-white">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wider text-slate-500">
+              <tr>
+                <th className="py-3 px-4">Officer ID</th>
+                <th className="py-3 px-4">Reason</th>
+                <th className="py-3 px-4">Granted at</th>
+                <th className="py-3 px-4">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeGrants.map((g: any) => (
+                <tr key={g.officer_id} className="border-t border-slate-100">
+                  <td className="py-3 px-4 font-mono text-xs">{g.officer_id}</td>
+                  <td className="py-3 px-4 text-slate-600">{g.reason || '—'}</td>
+                  <td className="py-3 px-4 text-slate-500 text-xs">{new Date(g.granted_at).toLocaleString()}</td>
+                  <td className="py-3 px-4">
+                    <RevokeJurisdictionGrantButton officerId={g.officer_id} jurisdiction={myJurisdiction} />
+                  </td>
+                </tr>
+              ))}
+              {activeGrants.length === 0 && (
+                <tr>
+                  <td className="py-6 px-4 text-center text-slate-500" colSpan={4}>
+                    No active cross-jurisdiction grants into {myJurisdiction}.
                   </td>
                 </tr>
               )}

@@ -183,7 +183,7 @@ export default async function AuthorizationsQueuePage() {
                                   <button
                                     type="button"
                                     disabled
-                                    title="TODO(OFFICER-JURISDICTION-GRANT-REQUEST-UI)"
+                                    title="Admin can now grant this via /admin (P1.3) — self-service officer request UI is a separate, not-yet-built follow-up"
                                     className="mt-2 border border-slate-300 px-2 py-1 text-[10px] font-semibold uppercase tracking-register text-slate-500"
                                   >
                                     Request grant
@@ -280,7 +280,7 @@ export default async function AuthorizationsQueuePage() {
                                   <button
                                     type="button"
                                     disabled
-                                    title="TODO(OFFICER-JURISDICTION-GRANT-REQUEST-UI)"
+                                    title="Admin can now grant this via /admin (P1.3) — self-service officer request UI is a separate, not-yet-built follow-up"
                                     className="mt-2 border border-slate-300 px-2 py-1 text-[10px] font-semibold uppercase tracking-register text-slate-500"
                                   >
                                     Request grant

@@ -31,8 +31,10 @@ const SetHomeJurisdictionSchema = z
 /**
  * POST /api/officer/me — set the officer's home_jurisdiction. Only
  * allowed if it is currently null (first-time onboarding). Later changes
- * require an administrator to open an officer_jurisdiction_grant row.
- * TODO(SUPPORT-HOME-JURISDICTION-CHANGE-VIA-ADMIN).
+ * require an administrator to open an officer_jurisdiction_grant row
+ * (P1.3: now possible via POST /api/admin/officers/jurisdiction-grant,
+ * see app/admin/page.tsx's "Cross-jurisdiction grants" section) rather
+ * than changing home_jurisdiction itself.
  */
 export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());
@@ -42,8 +44,8 @@ export async function POST(req: NextRequest) {
   if (caller.homeJurisdiction) {
     return jsonError(
       409,
-      'Home jurisdiction already set. Changes require an administrative grant. ' +
-        'TODO(SUPPORT-HOME-JURISDICTION-CHANGE-VIA-ADMIN).',
+      'Home jurisdiction already set. An administrator can grant cross-jurisdiction ' +
+        'access via POST /api/admin/officers/jurisdiction-grant (P1.3) instead.',
     );
   }
 

@@ -35,7 +35,7 @@ export default async function OnboardingJurisdictionPage() {
         <PageHeader
           eyebrow="Complete onboarding"
           title="Choose your home jurisdiction"
-          subtitle="Your home jurisdiction determines which cases you can access by default. Changes require an administrative grant. TODO(SUPPORT-HOME-JURISDICTION-CHANGE-VIA-ADMIN)."
+          subtitle="Your home jurisdiction determines which cases you can access by default. Changes require an administrative grant.. An admin can now grant this via /admin (P1.3)."
         />
         <OnboardingClient current={current} />
       </main>
