@@ -5,11 +5,9 @@ import {
   IssueWarrantInputSchema,
   validateWarrantIssue,
 } from '@/lib/authz';
-import { appendAudit } from '@/lib/db';
 import {
   jsonError,
   jsonOk,
-  requestIp,
   requireRole,
   resolveCaller,
 } from '@/lib/api';
@@ -30,13 +28,12 @@ export const dynamic = 'force-dynamic';
  *        Committee approval + Competent Authority allowlist
  *   3. IT Rules 2009 R.11: perOrderDays ≤ 60
  *
- * Post-write: appends AUTH_ISSUE to audit_log via p_append_audit RPC.
- *
- * TODO(AUDIT-ATOMICITY): the row insert and the audit append are two
- * network round-trips. If the audit append fails, we attempt a
- * compensating delete of the just-created row and surface a 502 with a
- * clear message. A proper fix wraps both in one plpgsql function so
- * they share a Postgres transaction.
+ * Insert + AUTH_ISSUE audit-append happen atomically inside the
+ * SECURITY DEFINER RPC p_authorization_issue (20260909000010), which
+ * also satisfies the authorization table's RLS (no INSERT policy
+ * exists for INVESTIGATING_OFFICER/SUPERVISING_OFFICER — see that
+ * migration) and normalizes legacy un-prefixed India statute codes to
+ * the IN_-prefixed form the DB jurisdiction-prefix trigger requires.
  */
 export async function POST(req: NextRequest) {
   const supabase = createClient(await cookies());
@@ -95,61 +92,44 @@ export async function POST(req: NextRequest) {
 
   const a = validation.authorization;
 
-  const { data: inserted, error: insertErr } = await supabase
-    .from('authorization')
-    .insert({
-      case_id: a.caseId,
-      jurisdiction,
-      subject_id: a.subjectId,
-      type: a.type,
-      legitimate_aim: a.legitimateAim,
-      issuing_authority_id: a.issuingAuthorityId,
-      issued_on: a.issuedOn,
-      expires_on: a.expiresOn,
-      scope: a.scope,
-      proportionality_checklist: a.proportionalityChecklist,
-      review_committee_approval: a.reviewCommitteeApproval,
-      statute_references: a.statuteReferences,
-      signed_order_document_hash: a.signedOrderDocumentHash,
-      signed_order_document_ref: a.signedOrderDocumentRef,
-      dpdpa_exemption_ref: a.dpdpaExemptionRef,
-      status: 'PENDING_REVIEW',
-      revocation_log: [],
-    })
-    .select('id')
-    .single();
-
-  if (insertErr || !inserted) {
-    return jsonError(500, `insert failed: ${insertErr?.message ?? 'unknown'}`);
-  }
-
-  const audit = await appendAudit(supabase, {
-    actorId: caller.officerId,
-    actorRole: 'INVESTIGATING_OFFICER',
-    action: 'AUTH_ISSUE',
-    targetType: 'authorization',
-    targetId: (inserted as { id: string }).id,
-    context: {
-      caseId: a.caseId,
-      subjectId: a.subjectId,
-      legitimateAim: a.legitimateAim,
-      statuteReferences: a.statuteReferences,
+  // Atomic insert + audit-append via SECURITY DEFINER RPC. Replaces the
+  // former raw `.from('authorization').insert(...)`, which had no RLS
+  // INSERT policy to satisfy (fixed in 20260909000010) and relied on a
+  // two-round-trip insert-then-audit pattern with a compensating delete
+  // on audit failure (TODO(AUDIT-ATOMICITY), now resolved — both writes
+  // share one Postgres transaction inside the RPC).
+  const { data: result, error: rpcErr } = await supabase.rpc(
+    'p_authorization_issue',
+    {
+      p_case_id: a.caseId,
+      p_jurisdiction: jurisdiction,
+      p_subject_id: a.subjectId,
+      p_type: a.type,
+      p_legitimate_aim: a.legitimateAim,
+      p_issuing_authority_id: a.issuingAuthorityId,
+      p_issued_on: a.issuedOn,
+      p_expires_on: a.expiresOn,
+      p_scope: a.scope,
+      p_proportionality_checklist: a.proportionalityChecklist,
+      p_review_committee_approval: a.reviewCommitteeApproval,
+      p_statute_references: a.statuteReferences,
+      p_signed_order_document_hash: a.signedOrderDocumentHash,
+      p_signed_order_document_ref: a.signedOrderDocumentRef,
+      p_dpdpa_exemption_ref: a.dpdpaExemptionRef,
+      p_caller_officer_id: caller.officerId,
+      // Preserves the original route's hardcoded actorRole: 'INVESTIGATING_OFFICER'
+      // audit-log quirk when the caller actually holds that role; otherwise
+      // records the actual matching role (SUPERVISING_OFFICER).
+      p_caller_role: caller.roles.includes('INVESTIGATING_OFFICER')
+        ? 'INVESTIGATING_OFFICER'
+        : 'SUPERVISING_OFFICER',
     },
-    ip: requestIp(req),
-  });
+  );
 
-  if (!audit.ok) {
-    // TODO(AUDIT-ATOMICITY): compensating delete because the audit
-    // write happens outside the insert's transaction.
-    await supabase
-      .from('authorization')
-      .delete()
-      .eq('id', (inserted as { id: string }).id);
-    return jsonError(
-      502,
-      `authorization written but audit append failed; compensating rollback applied: ${audit.error}`,
-    );
+  if (rpcErr || !result) {
+    return jsonError(500, `authorization issuance failed: ${rpcErr?.message ?? 'unknown'}`);
   }
 
-  return jsonOk({ id: (inserted as { id: string }).id, auditId: audit.id }, 201);
+  const { id, auditId } = result as { id: string; auditId: number };
+  return jsonOk({ id, auditId }, 201);
 }
