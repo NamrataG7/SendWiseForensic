@@ -143,11 +143,20 @@ const COMPETENT_AUTHORITIES: Record<
   Jurisdiction,
   { id: string; label: string }[]
 > = {
+  // IN values are real officer.id UUIDs (role COMPETENT_AUTHORITY), seeded
+  // by supabase/migrations/20260909000009_seed_competent_authority_officers.sql
+  // and matching packages/legal-framework/src/india/index.ts's
+  // IN_COMPETENT_AUTHORITIES exactly. Previously these were non-UUID
+  // strings ("IN-UNION-HS-STUB", ...) that the backend's issuing_authority_id
+  // (uuid FK to officer.id) could never accept — no real user could ever
+  // submit a valid India warrant through this dropdown. US/UK stubs are
+  // unaffected (no equivalent UUID FK/seed exists for those jurisdictions
+  // yet — TODO(US-UK-COMPETENT-AUTHORITY-SEED) if/when they need one).
   IN: [
-    { id: 'IN-UNION-HS-STUB', label: 'Union Home Secretary (stub)' },
-    { id: 'IN-STATE-HS-MH-STUB', label: 'Maharashtra Home Secretary (stub)' },
-    { id: 'IN-STATE-HS-KA-STUB', label: 'Karnataka Home Secretary (stub)' },
-    { id: 'IN-STATE-HS-DL-STUB', label: 'Delhi Home Secretary (stub)' },
+    { id: 'a0000000-0000-4000-8000-000000000001', label: 'Union Home Secretary (stub)' },
+    { id: 'a0000000-0000-4000-8000-000000000002', label: 'Maharashtra Home Secretary (stub)' },
+    { id: 'a0000000-0000-4000-8000-000000000003', label: 'Karnataka Home Secretary (stub)' },
+    { id: 'a0000000-0000-4000-8000-000000000004', label: 'Delhi Home Secretary (stub)' },
   ],
   US: [
     { id: 'US-JUDGE-DDC-STUB', label: 'Federal Judge — D.D.C. (stub)' },
