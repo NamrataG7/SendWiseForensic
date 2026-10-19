@@ -34,15 +34,22 @@ import { randomUUID } from 'node:crypto';
 // TODO(UIDAI-INTEGRATION) resolve the current Union/State Home Secretary set
 // from an authoritative registry (e.g. eGazette + DoPT). For the prototype
 // we return a static stub list so the allowlist logic can be exercised end-to-end.
+//
+// officerId values below are REAL officer.id UUIDs (role COMPETENT_AUTHORITY),
+// seeded by supabase/migrations/20260909000009_seed_competent_authority_officers.sql.
+// They were previously non-UUID strings ("IN-UNION-HS-STUB", ...), which could
+// never satisfy authorization.issuing_authority_id's `uuid NOT NULL REFERENCES
+// officer(id)` FK — meaning no India JUDICIAL_WARRANT could ever be created.
+// These UUIDs must stay in lockstep with that migration.
 const IN_COMPETENT_AUTHORITIES: CompetentAuthorities = {
   unionHomeSecretary: {
-    officerId: 'IN-UNION-HS-STUB',
+    officerId: 'a0000000-0000-4000-8000-000000000001',
     name: 'STUB — Union Home Secretary',
   },
   stateHomeSecretaries: [
-    { state: 'MH', officerId: 'IN-STATE-HS-MH-STUB', name: 'STUB — Maharashtra Home Secretary' },
-    { state: 'KA', officerId: 'IN-STATE-HS-KA-STUB', name: 'STUB — Karnataka Home Secretary' },
-    { state: 'DL', officerId: 'IN-STATE-HS-DL-STUB', name: 'STUB — Delhi Home Secretary' },
+    { state: 'MH', officerId: 'a0000000-0000-4000-8000-000000000002', name: 'STUB — Maharashtra Home Secretary' },
+    { state: 'KA', officerId: 'a0000000-0000-4000-8000-000000000003', name: 'STUB — Karnataka Home Secretary' },
+    { state: 'DL', officerId: 'a0000000-0000-4000-8000-000000000004', name: 'STUB — Delhi Home Secretary' },
     // TODO(UIDAI-INTEGRATION) load the full 28+8 set from a notified registry.
   ],
 };
