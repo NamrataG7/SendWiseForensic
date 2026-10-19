@@ -6,8 +6,25 @@
  * Magistrate under BNSS bail/probation pathways. The prototype only
  * captures the document hash and issuer form fields.
  *
- * TODO(ESIGN-VERIFICATION) — attach real signer certificate + verify
- * signature bytes.
+ * TODO(ESIGN-VERIFICATION) — intentionally NOT implementing PAdES/CAdES
+ * structural signature verification here (evaluated and rejected this
+ * scope, not merely deferred): this function IS the stub signer, not a
+ * verifier of externally-signed documents. Nothing in this prototype's
+ * own flow ever produces a genuinely PAdES-signed PDF (embedded
+ * /ByteRange + /Contents PKCS#7 signature dictionary) for a verifier to
+ * check against -- officers type a name/designation into a form and
+ * this function hashes whatever PDF bytes were given. A verification
+ * step that structurally checks "does this PDF contain a valid embedded
+ * signature" would reject 100% of inputs this prototype can itself
+ * generate, making the feature untestable and unusable in its own demo/
+ * test flow. Real implementation requires a genuine upstream signing
+ * authority (UIDAI e-Sign ASP, or a Magistrate's HSM-backed certificate)
+ * issuing actual PAdES-compliant PDFs BEFORE this code ever sees them --
+ * only then does verification logic have something meaningful to check.
+ * If/when that upstream integration exists, `node-signpdf`/`@signpdf/signpdf`
+ * or a `node-forge`-based manual PKCS#7 check are the realistic options
+ * for the verification side; certificate-chain trust against a real
+ * government root is a separate, further integration beyond that.
  */
 
 import { createHash } from 'node:crypto';
